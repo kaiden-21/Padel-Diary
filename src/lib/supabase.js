@@ -213,3 +213,108 @@ export async function listFollowing() {
   if (error) throw error;
   return data.map((r) => r.profiles);
 }
+
+// ---------------------------------------------------------------------
+// GOOGLE OAUTH
+// ---------------------------------------------------------------------
+
+
+
+// ---------------------------------------------------------------------
+// LOBBIES
+// ---------------------------------------------------------------------
+
+// Create a new lobby — returns the full lobby row including the auto-generated code.
+export async function createLobby(cfg) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Not signed in');
+  const { data, error } = await supabase
+    .from('lobbies')
+    .insert({
+      host_id: user.id,
+      venue: cfg.venue || null,
+      venue_address: cfg.venueAddress || null,
+      venue_lat: cfg.venueLat || null,
+      venue_lng: cfg.venueLng || null,
+      format: cfg.format || 'americano',
+      scoring: cfg.scoring || null,
+      total_rounds: cfg.totalRounds || 5,
+      num_courts: cfg.numCourts || 1,
+      status: 'open',
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  // Host automatically joins their own lobby.
+  await supabase.from('lobby_members').insert({ lobby_id: data.id, profile_id: user.id, selected: true });
+  return data;
+}
+
+// Fetch a lobby by its short join code (what's in the share link).
+export async function getLobbyByCode(code) {
+  const { data, error } = await supabase
+    .from('lobbies')
+    .select('*, host:host_id (id, name, photo_url)')
+    .eq('code', code)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Fetch a lobby and all its current members with their profiles.
+export async function getLobbyWithMembers(lobbyId) {
+  const [{ data: lobby, error: le }, { data: members, error: me }] = await Promise.all([
+    supabase.from('lobbies').select('*, host:host_id (id, name, photo_url)').eq('id', lobbyId).single(),
+    supabase.from('lobby_members').select('*, profile:profile_id (id, name, photo_url, racket, side, rackets_owned)').eq('lobby_id', lobbyId).order('joined_at'),
+  ]);
+  if (le) throw le;
+  if (me) throw me;
+  return { lobby, members };
+}
+
+// Join a lobby (called when a friend clicks the share link).
+export async function joinLobby(lobbyId) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Not signed in');
+  const { error } = await supabase
+    .from('lobby_members')
+    .upsert({ lobby_id: lobbyId, profile_id: user.id }, { onConflict: 'lobby_id,profile_id' });
+  if (error) throw error;
+}
+
+// Host toggles a member as selected (in) or deselected (out).
+export async function toggleMemberSelected(memberId, selected) {
+  const { error } = await supabase
+    .from('lobby_members')
+    .update({ selected })
+    .eq('id', memberId);
+  if (error) throw error;
+}
+
+// Host starts the match — marks lobby as started and returns selected members' profiles.
+export async function startLobbyMatch(lobbyId) {
+  const { error } = await supabase
+    .from('lobbies')
+    .update({ status: 'started', started_at: new Date().toISOString() })
+    .eq('id', lobbyId);
+  if (error) throw error;
+  const { data, error: me } = await supabase
+    .from('lobby_members')
+    .select('profile:profile_id (id, name, photo_url, racket, side)')
+    .eq('lobby_id', lobbyId)
+    .eq('selected', true);
+  if (me) throw me;
+  return data.map((m) => m.profile);
+}
+
+// Subscribe to live updates for a lobby's member list.
+// Returns an unsubscribe function.
+export function subscribeLobby(lobbyId, onUpdate) {
+  const channel = supabase
+    .channel(`lobby:${lobbyId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'lobby_members', filter: `lobby_id=eq.${lobbyId}` }, onUpdate)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'lobbies', filter: `id=eq.${lobbyId}` }, onUpdate)
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}
+

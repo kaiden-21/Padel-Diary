@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Minus, Star, ChevronLeft, MapPin, BookOpen, Play, Camera, Check, Trophy, LogOut, Mail } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Plus, Minus, Star, ChevronLeft, MapPin, BookOpen, Play, Camera, Check, Trophy, LogOut, Mail, Users, Link, Search } from 'lucide-react';
 import {
   signInWithEmail,
+  signInWithGoogle,
   signOut,
   getCurrentUser,
   onAuthChange,
@@ -11,6 +12,13 @@ import {
   searchProfiles,
   saveSession as saveSessionRemote,
   listMySessions,
+  createLobby,
+  getLobbyByCode,
+  getLobbyWithMembers,
+  joinLobby,
+  toggleMemberSelected,
+  startLobbyMatch,
+  subscribeLobby,
 } from './lib/supabase.js';
 
 const COLORS = {
@@ -348,6 +356,86 @@ function SessionTicket({ session, youName, onClick }) {
   );
 }
 
+// ---------- venue search (Google Places) ----------
+function VenueSearch({ value, onChange, onSelect }) {
+  const [query, setQuery] = useState(value || '');
+  const [suggestions, setSuggestions] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const timerRef = useRef(null);
+  const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
+
+  async function search(q) {
+    if (!q || q.length < 3) { setSuggestions([]); return; }
+    setBusy(true);
+    try {
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(q)}&types=establishment&key=${MAPS_KEY}&language=id`
+      );
+      const data = await res.json();
+      setSuggestions(data.predictions || []);
+    } catch (e) {
+      setSuggestions([]);
+    }
+    setBusy(false);
+  }
+
+  async function selectPlace(prediction) {
+    setQuery(prediction.description);
+    setSuggestions([]);
+    // Fetch place details for lat/lng
+    try {
+      const res = await fetch(
+        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${prediction.place_id}&fields=geometry,formatted_address,name&key=${MAPS_KEY}`
+      );
+      const data = await res.json();
+      const result = data.result;
+      onSelect({
+        name: result.name || prediction.structured_formatting?.main_text || prediction.description,
+        address: result.formatted_address || prediction.description,
+        lat: result.geometry?.location?.lat || null,
+        lng: result.geometry?.location?.lng || null,
+      });
+    } catch (e) {
+      onSelect({ name: prediction.structured_formatting?.main_text || prediction.description, address: prediction.description, lat: null, lng: null });
+    }
+  }
+
+  function handleChange(val) {
+    setQuery(val);
+    onChange(val);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => search(val), 350);
+  }
+
+  return (
+    <div className="relative mb-4">
+      <div className="relative">
+        <Search size={16} color={COLORS.glass} className="absolute left-3 top-3" />
+        <input
+          value={query}
+          onChange={(e) => handleChange(e.target.value)}
+          placeholder="Search courts, venues…"
+          className="w-full pl-9 pr-3 py-2.5 rounded-lg border text-sm"
+          style={{ borderColor: COLORS.glass }}
+        />
+      </div>
+      {suggestions.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 rounded-xl overflow-hidden shadow-lg" style={{ backgroundColor: '#fff' }}>
+          {suggestions.map((s) => (
+            <button key={s.place_id} onClick={() => selectPlace(s)} className="w-full text-left px-4 py-3 text-sm flex items-start gap-2" style={{ borderBottom: '1px solid #eee', color: COLORS.ink }}>
+              <MapPin size={14} color={COLORS.glass} className="mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <div className="font-medium truncate">{s.structured_formatting?.main_text}</div>
+                <div className="text-xs truncate" style={{ color: COLORS.glass }}>{s.structured_formatting?.secondary_text}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- new match setup ----------
 function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCancel }) {
   const knownVenues = useMemo(() => [...new Set(sessions.map((s) => s.venue))], [sessions]);
@@ -358,6 +446,9 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
   }, [sessions, youName]);
 
   const [venue, setVenue] = useState('');
+  const [venueAddress, setVenueAddress] = useState('');
+  const [venueLat, setVenueLat] = useState(null);
+  const [venueLng, setVenueLng] = useState(null);
   const [format, setFormat] = useState('americano');
   const [count, setCount] = useState(4);
   const [names, setNames] = useState(['', '', '']);
@@ -397,7 +488,7 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
     if (new Set(all).size !== all.length) { setError('Player names must be unique.'); return; }
     if (format === 'fixed' && all.length % 2 !== 0) { setError('Fixed pairs needs an even number of players.'); return; }
     const scoring = scoreMode === 'points' ? { mode: 'points', target: pointsTarget } : { mode: 'tennis', target: tennisTarget };
-    onStart({ venue: venue.trim(), format, totalRounds: rounds, numCourts, scoring, players: all, gear: { racket: racket.trim(), side } });
+    onStart({ venue: venue.trim(), venueAddress, venueLat, venueLng, format, totalRounds: rounds, numCourts, scoring, players: all, gear: { racket: racket.trim(), side } });
   }
 
   const sitsOut = count - numCourts * 4 > 0 || count % 4 !== 0;
@@ -413,8 +504,16 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
       {!hasActive && <div className="mb-4" />}
 
       <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Venue</label>
-      <input list="venues" value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="e.g. Padel Garage Senayan" className="w-full px-3 py-2.5 rounded-lg border mb-4 text-sm" style={{ borderColor: COLORS.glass }} />
-      <datalist id="venues">{knownVenues.map((v) => <option key={v} value={v} />)}</datalist>
+      <VenueSearch
+        value={venue}
+        onChange={(val) => setVenue(val)}
+        onSelect={(place) => { setVenue(place.name); setVenueAddress(place.address); setVenueLat(place.lat); setVenueLng(place.lng); }}
+      />
+      {venueAddress ? (
+        <p className="text-xs -mt-2 mb-4 flex items-center gap-1" style={{ color: COLORS.glass }}>
+          <MapPin size={12} /> {venueAddress}
+        </p>
+      ) : null}
 
       <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Format</label>
       <div className="flex gap-2 mb-2">
@@ -1111,6 +1210,256 @@ function Empty({ text }) {
   return <div className="text-center py-16 px-4 rounded-2xl" style={{ backgroundColor: '#fff' }}><p className="text-sm" style={{ color: COLORS.glass }}>{text}</p></div>;
 }
 
+// ---------- lobby ----------
+function LobbySetup({ profile, onCreated, onCancel }) {
+  const [venue, setVenue] = useState('');
+  const [venueAddress, setVenueAddress] = useState('');
+  const [venueLat, setVenueLat] = useState(null);
+  const [venueLng, setVenueLng] = useState(null);
+  const [format, setFormat] = useState('americano');
+  const [rounds, setRounds] = useState(5);
+  const [numCourts, setNumCourts] = useState(1);
+  const [scoreMode, setScoreMode] = useState('points');
+  const [pointsTarget, setPointsTarget] = useState(21);
+  const [tennisTarget, setTennisTarget] = useState(6);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function create() {
+    if (!venue.trim()) { setError('Add a venue first.'); return; }
+    setBusy(true);
+    try {
+      const scoring = scoreMode === 'points' ? { mode: 'points', target: pointsTarget } : { mode: 'tennis', target: tennisTarget };
+      const lobby = await createLobby({ venue: venue.trim(), venueAddress, venueLat, venueLng, format, scoring, totalRounds: rounds, numCourts });
+      onCreated(lobby);
+    } catch (e) {
+      setError(e.message || 'Could not create lobby.');
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div className="px-5 pt-6 pb-28">
+      <button onClick={onCancel} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.glass }}><ChevronLeft size={18} /> Back</button>
+      <h2 className="font-display text-2xl tracking-wide mb-1" style={{ color: COLORS.teal }}>CREATE LOBBY</h2>
+      <p className="text-sm mb-5" style={{ color: COLORS.glass }}>Set up the match, share the link, friends join the waiting room.</p>
+
+      <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Venue</label>
+      <VenueSearch value={venue} onChange={setVenue} onSelect={(p) => { setVenue(p.name); setVenueAddress(p.address); setVenueLat(p.lat); setVenueLng(p.lng); }} />
+      {venueAddress && <p className="text-xs -mt-2 mb-4 flex items-center gap-1" style={{ color: COLORS.glass }}><MapPin size={12} />{venueAddress}</p>}
+
+      <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Format</label>
+      <div className="flex gap-2 mb-2">
+        {[{ k: 'americano', label: 'Americano' }, { k: 'mexicano', label: 'Mexicano' }, { k: 'fixed', label: 'Fixed pairs' }].map((f) => (
+          <button key={f.k} onClick={() => setFormat(f.k)} className="flex-1 py-2.5 rounded-lg text-xs font-medium border" style={{ backgroundColor: format === f.k ? COLORS.teal : 'transparent', color: format === f.k ? COLORS.cream : COLORS.teal, borderColor: COLORS.teal }}>{f.label}</button>
+        ))}
+      </div>
+      <p className="text-xs mb-4" style={{ color: COLORS.glass }}>{format === 'americano' ? 'Partners rotate every round.' : format === 'mexicano' ? 'Pairings shift by live standings.' : 'Fixed partners, opponents rotate.'}</p>
+
+      <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Rounds</label>
+      <div className="flex items-center gap-3 mb-4">
+        <button onClick={() => setRounds((r) => Math.max(1, r - 1))} className="w-10 h-10 rounded-lg flex items-center justify-center border" style={{ borderColor: COLORS.teal, color: COLORS.teal }}><Minus size={18} /></button>
+        <div className="flex-1 text-center"><span className="font-display text-3xl" style={{ color: COLORS.teal }}>{rounds}</span><span className="text-sm ml-1" style={{ color: COLORS.glass }}>rounds</span></div>
+        <button onClick={() => setRounds((r) => Math.min(10, r + 1))} className="w-10 h-10 rounded-lg flex items-center justify-center border" style={{ borderColor: COLORS.teal, color: COLORS.teal }}><Plus size={18} /></button>
+      </div>
+
+      <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Scoring</label>
+      <div className="flex gap-2 mb-2">
+        {[{ key: 'points', label: 'Points' }, { key: 'tennis', label: 'Tennis' }].map((m) => (
+          <button key={m.key} onClick={() => setScoreMode(m.key)} className="flex-1 py-2.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: scoreMode === m.key ? COLORS.teal : 'transparent', color: scoreMode === m.key ? COLORS.cream : COLORS.teal, borderColor: COLORS.teal }}>{m.label}</button>
+        ))}
+      </div>
+      {scoreMode === 'points' ? (
+        <div className="flex gap-2 mb-4">{[16, 21, 32].map((p) => (<button key={p} onClick={() => setPointsTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: pointsTarget === p ? COLORS.lime : 'transparent', color: COLORS.teal, borderColor: pointsTarget === p ? COLORS.lime : COLORS.glass }}>{p} pts</button>))}</div>
+      ) : (
+        <div className="flex gap-2 mb-4">{[4, 6, 9].map((p) => (<button key={p} onClick={() => setTennisTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: tennisTarget === p ? COLORS.lime : 'transparent', color: COLORS.teal, borderColor: tennisTarget === p ? COLORS.lime : COLORS.glass }}>First to {p}</button>))}</div>
+      )}
+
+      {error && <p className="text-sm mb-3" style={{ color: COLORS.clay }}>{error}</p>}
+      <button onClick={create} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+        {busy ? 'CREATING…' : 'CREATE & GET LINK'}
+      </button>
+    </div>
+  );
+}
+
+function LobbyWaiting({ lobby, onStartMatch, onBack }) {
+  const [members, setMembers] = useState([]);
+  const [copying, setCopying] = useState(false);
+  const shareUrl = `${window.location.origin}/lobby/${lobby.code}`;
+
+  async function load() {
+    try {
+      const { members: m } = await getLobbyWithMembers(lobby.id);
+      setMembers(m);
+    } catch (e) {}
+  }
+
+  useEffect(() => {
+    load();
+    const unsub = subscribeLobby(lobby.id, load);
+    return unsub;
+  }, [lobby.id]);
+
+  async function copyLink() {
+    try { await navigator.clipboard.writeText(shareUrl); } catch (e) {}
+    setCopying(true);
+    setTimeout(() => setCopying(false), 2000);
+  }
+
+  async function toggle(member) {
+    try { await toggleMemberSelected(member.id, !member.selected); load(); } catch (e) {}
+  }
+
+  async function handleStart() {
+    const selected = members.filter((m) => m.selected);
+    if (selected.length < 4) { alert('Select at least 4 players to start.'); return; }
+    const players = await startLobbyMatch(lobby.id);
+    onStartMatch({ lobby, players: players.map((p) => p.name), scoring: lobby.scoring, format: lobby.format, totalRounds: lobby.total_rounds, numCourts: lobby.num_courts, venue: lobby.venue, venueAddress: lobby.venue_address, venueLat: lobby.venue_lat, venueLng: lobby.venue_lng });
+  }
+
+  const selected = members.filter((m) => m.selected);
+
+  return (
+    <div className="px-5 pt-6 pb-28">
+      <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.glass }}><ChevronLeft size={18} /> Back</button>
+      <h2 className="font-display text-2xl tracking-wide mb-1" style={{ color: COLORS.teal }}>LOBBY</h2>
+      <p className="text-sm mb-4" style={{ color: COLORS.glass }}>{lobby.venue} &middot; {lobby.format} &middot; {lobby.total_rounds} rounds</p>
+
+      <div className="rounded-2xl p-4 mb-5" style={{ backgroundColor: COLORS.teal }}>
+        <p className="font-mono text-xs mb-2" style={{ color: COLORS.lime }}>SHARE THIS LINK</p>
+        <p className="text-sm mb-3 break-all" style={{ color: COLORS.cream }}>{shareUrl}</p>
+        <button onClick={copyLink} className="w-full py-2.5 rounded-lg font-display tracking-wide flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+          <Link size={16} /> {copying ? 'COPIED!' : 'COPY LINK'}
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <p className="font-mono text-xs uppercase" style={{ color: COLORS.glass }}>In the lobby ({members.length})</p>
+        <p className="font-mono text-xs" style={{ color: COLORS.glass }}>{selected.length} selected</p>
+      </div>
+
+      {members.length === 0 && (
+        <div className="text-center py-10 rounded-2xl mb-5" style={{ backgroundColor: '#fff' }}>
+          <Users size={28} color={COLORS.glass} className="mx-auto mb-2" />
+          <p className="text-sm" style={{ color: COLORS.glass }}>Waiting for friends to join…</p>
+        </div>
+      )}
+
+      <div className="space-y-2 mb-6">
+        {members.map((m) => (
+          <button key={m.id} onClick={() => toggle(m)} className="w-full flex items-center gap-3 p-3 rounded-2xl" style={{ backgroundColor: m.selected ? COLORS.teal : '#fff' }}>
+            <Avatar photo={m.profile?.photo_url} name={m.profile?.name} size={44} />
+            <div className="flex-1 text-left min-w-0">
+              <p className="text-sm font-medium truncate" style={{ color: m.selected ? COLORS.cream : COLORS.ink }}>{m.profile?.name}</p>
+              <p className="font-mono text-xs" style={{ color: m.selected ? COLORS.lime : COLORS.glass }}>
+                {m.profile?.racket || m.profile?.rackets_owned || 'No racket'} &middot; {m.profile?.side || 'Right'} side
+              </p>
+            </div>
+            <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: m.selected ? COLORS.lime : 'transparent', border: m.selected ? 'none' : '2px solid ' + COLORS.glass }}>
+              {m.selected && <Check size={14} color={COLORS.teal} />}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <button onClick={handleStart} disabled={selected.length < 4} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+        START MATCH ({selected.length} players)
+      </button>
+    </div>
+  );
+}
+
+function LobbyJoin({ code, youName, onJoined, onBack }) {
+  const [lobby, setLobby] = useState(null);
+  const [members, setMembers] = useState([]);
+  const [joining, setJoining] = useState(false);
+  const [joined, setJoined] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const l = await getLobbyByCode(code);
+        setLobby(l);
+        const { members: m } = await getLobbyWithMembers(l.id);
+        setMembers(m);
+        setJoined(m.some((mem) => mem.profile?.name === youName));
+        const unsub = subscribeLobby(l.id, async () => {
+          const { members: updated } = await getLobbyWithMembers(l.id);
+          setMembers(updated);
+        });
+        return unsub;
+      } catch (e) {
+        setError('Lobby not found. Check the link and try again.');
+      }
+    })();
+  }, [code]);
+
+  async function join() {
+    if (!lobby) return;
+    setJoining(true);
+    try {
+      await joinLobby(lobby.id);
+      setJoined(true);
+    } catch (e) {
+      setError(e.message || 'Could not join. Try again.');
+    }
+    setJoining(false);
+  }
+
+  if (error) return (
+    <div className="px-5 pt-6 pb-28 text-center">
+      <button onClick={onBack} className="flex items-center gap-1 text-sm mb-8" style={{ color: COLORS.glass }}><ChevronLeft size={18} /> Back</button>
+      <p className="text-sm" style={{ color: COLORS.clay }}>{error}</p>
+    </div>
+  );
+
+  if (!lobby) return (
+    <div className="px-5 pt-6 pb-28 flex items-center justify-center">
+      <p className="font-mono text-sm" style={{ color: COLORS.glass }}>Loading lobby…</p>
+    </div>
+  );
+
+  return (
+    <div className="px-5 pt-6 pb-28">
+      <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.glass }}><ChevronLeft size={18} /> Back</button>
+      <h2 className="font-display text-2xl tracking-wide mb-1" style={{ color: COLORS.teal }}>{lobby.venue}</h2>
+      <p className="font-mono text-xs mb-5" style={{ color: COLORS.glass }}>{lobby.format} &middot; {lobby.total_rounds} rounds &middot; hosted by {lobby.host?.name}</p>
+
+      {lobby.venue_address && (
+        <a href={`https://maps.google.com/?q=${encodeURIComponent(lobby.venue_address)}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-3 rounded-xl mb-5 text-sm font-medium" style={{ backgroundColor: COLORS.teal, color: COLORS.lime }}>
+          <MapPin size={16} /> Get directions
+        </a>
+      )}
+
+      {!joined ? (
+        <button onClick={join} disabled={joining} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40 mb-5" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+          {joining ? 'JOINING…' : 'JOIN LOBBY'}
+        </button>
+      ) : (
+        <div className="rounded-2xl p-4 mb-5 text-center" style={{ backgroundColor: '#EDF0DD' }}>
+          <Check size={20} color={COLORS.teal} className="mx-auto mb-1" />
+          <p className="text-sm font-medium" style={{ color: COLORS.teal }}>You're in the lobby! The host will start the match soon.</p>
+        </div>
+      )}
+
+      <p className="font-mono text-xs uppercase mb-2" style={{ color: COLORS.glass }}>In the lobby ({members.length})</p>
+      <div className="space-y-2">
+        {members.map((m) => (
+          <div key={m.id} className="flex items-center gap-3 p-3 rounded-2xl" style={{ backgroundColor: '#fff' }}>
+            <Avatar photo={m.profile?.photo_url} name={m.profile?.name} size={40} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate" style={{ color: COLORS.ink }}>{m.profile?.name}</p>
+              <p className="font-mono text-xs" style={{ color: COLORS.glass }}>{m.profile?.side || 'Right'} side</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ---------- nav + onboarding ----------
 function BottomNav({ tab, onChange, hasActive }) {
   return (
@@ -1131,13 +1480,41 @@ function BottomNav({ tab, onChange, hasActive }) {
   );
 }
 
+// + button menu: quick match or create lobby
+function NewMenu({ onQuickMatch, onCreateLobby, onCancel }) {
+  return (
+    <div className="px-5 pt-6 pb-28">
+      <button onClick={onCancel} className="flex items-center gap-1 text-sm mb-6" style={{ color: COLORS.glass }}><ChevronLeft size={18} /> Back</button>
+      <h2 className="font-display text-2xl tracking-wide mb-2" style={{ color: COLORS.teal }}>START PLAYING</h2>
+      <p className="text-sm mb-6" style={{ color: COLORS.glass }}>Jump straight into scoring, or create a lobby and invite your group first.</p>
+
+      <button onClick={onCreateLobby} className="w-full p-5 rounded-2xl text-left mb-3" style={{ backgroundColor: COLORS.teal }}>
+        <div className="flex items-center gap-3 mb-2">
+          <Users size={22} color={COLORS.lime} />
+          <span className="font-display text-xl tracking-wide" style={{ color: COLORS.lime }}>CREATE LOBBY</span>
+        </div>
+        <p className="text-sm" style={{ color: COLORS.cream }}>Share a link in your WhatsApp group. Friends join the waiting room. You pick who plays and start the match.</p>
+      </button>
+
+      <button onClick={onQuickMatch} className="w-full p-5 rounded-2xl text-left" style={{ backgroundColor: '#fff' }}>
+        <div className="flex items-center gap-3 mb-2">
+          <Play size={22} color={COLORS.teal} />
+          <span className="font-display text-xl tracking-wide" style={{ color: COLORS.teal }}>QUICK MATCH</span>
+        </div>
+        <p className="text-sm" style={{ color: COLORS.glass }}>Type in the players and start scoring immediately. No lobby, no waiting.</p>
+      </button>
+    </div>
+  );
+}
+
 function AuthScreen() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
-  async function submit() {
+  async function submitEmail() {
     if (!email.trim()) { setError('Enter your email.'); return; }
     setBusy(true);
     setError('');
@@ -1151,11 +1528,24 @@ function AuthScreen() {
     setBusy(false);
   }
 
+  async function submitGoogle() {
+    setGoogleBusy(true);
+    setError('');
+    try {
+      const { error: err } = await signInWithGoogle();
+      if (err) throw err;
+      // Google redirects away — no further action needed here
+    } catch (err) {
+      setError(err.message || 'Could not sign in with Google. Try again.');
+      setGoogleBusy(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col justify-center px-8 py-10" style={{ backgroundColor: COLORS.teal }}>
       <div className="max-w-md w-full mx-auto">
-        <h1 className="font-display text-4xl tracking-wide mb-2 text-center" style={{ color: COLORS.lime }}>PADEL DIARY</h1>
-        <p className="text-sm mb-7 text-center" style={{ color: COLORS.cream }}>Every match, every rivalry, every court &mdash; logged and shared.</p>
+        <h1 className="font-display text-5xl tracking-wide mb-1 text-center" style={{ color: COLORS.lime }}>PADELYUK</h1>
+        <p className="text-sm mb-8 text-center" style={{ color: COLORS.cream }}>Every match, every rivalry, every court.</p>
 
         {sent ? (
           <div className="rounded-2xl p-5 text-center" style={{ backgroundColor: COLORS.cream }}>
@@ -1164,23 +1554,42 @@ function AuthScreen() {
           </div>
         ) : (
           <>
+            {/* Google sign-in */}
+            <button
+              onClick={submitGoogle}
+              disabled={googleBusy}
+              className="w-full py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-3 mb-4 disabled:opacity-50"
+              style={{ backgroundColor: '#fff', color: COLORS.ink }}
+            >
+              <svg width="18" height="18" viewBox="0 0 48 48">
+                <path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.7-.1-4z"/>
+                <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
+                <path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.5-2.9-11.3-7.1l-6.6 4.9C9.8 40 16.4 44 24 44z"/>
+                <path fill="#1976D2" d="M43.6 20H24v8h11.3c-.9 2.5-2.6 4.6-4.8 6l6.2 5.2C40.7 35.5 44 30.2 44 24c0-1.3-.1-2.7-.4-4z"/>
+              </svg>
+              {googleBusy ? 'Redirecting…' : 'Sign in with Google'}
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-1 h-px" style={{ backgroundColor: COLORS.glass }} />
+              <span className="text-xs" style={{ color: COLORS.glass }}>or use email</span>
+              <div className="flex-1 h-px" style={{ backgroundColor: COLORS.glass }} />
+            </div>
+
             <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.lime }}>Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && submit()}
+              onKeyDown={(e) => e.key === 'Enter' && submitEmail()}
               placeholder="you@example.com"
               className="w-full px-4 py-3 rounded-lg mb-3 text-sm"
               style={{ backgroundColor: COLORS.cream, color: COLORS.ink }}
             />
             {error && <p className="text-sm mb-3" style={{ color: COLORS.lime }}>{error}</p>}
-            <button onClick={submit} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-50" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+            <button onClick={submitEmail} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-50" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
               {busy ? 'SENDING…' : 'SEND SIGN-IN LINK'}
             </button>
-            <p className="text-xs mt-4 text-center" style={{ color: COLORS.glass }}>
-              Google and Apple sign-in come later &mdash; email works today, no password needed.
-            </p>
           </>
         )}
       </div>
@@ -1209,7 +1618,7 @@ function ProfileSetup({ defaultName, onSubmit }) {
   return (
     <div className="min-h-screen flex flex-col justify-center px-8 py-10" style={{ backgroundColor: COLORS.teal }}>
       <div className="max-w-md w-full mx-auto">
-        <h1 className="font-display text-4xl tracking-wide mb-2 text-center" style={{ color: COLORS.lime }}>ONE MORE THING</h1>
+        <h1 className="font-display text-4xl tracking-wide mb-2 text-center" style={{ color: COLORS.lime }}>PADELYUK</h1>
         <p className="text-sm mb-7 text-center" style={{ color: COLORS.cream }}>A bit about you, so the diary knows who's playing.</p>
 
         <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.lime }}>Name</label>
@@ -1247,8 +1656,17 @@ export default function App() {
   const [sessions, setSessions] = useState([]);
   const [active, setActive] = useState(null);
   const [tab, setTab] = useState('diary');
+  const [activeLobby, setActiveLobby] = useState(null); // lobby the user created / is hosting
+  const [lobbyJoinCode, setLobbyJoinCode] = useState(null); // code from a join link
 
   const youName = profile ? profile.name : null;
+
+  // Handle /lobby/:code deep links on first load
+  useEffect(() => {
+    const path = window.location.pathname;
+    const match = path.match(/^\/lobby\/([a-zA-Z0-9]+)$/);
+    if (match) setLobbyJoinCode(match[1]);
+  }, []);
 
   // The in-progress match is a draft, not a real record yet — keep it in the
   // browser only, the same way it worked locally. Real sessions go to Supabase.
@@ -1347,12 +1765,22 @@ export default function App() {
       pairings = courts.map((c) => pairingFor(cfg.format, c, c.rounds));
     }
     const next = {
-      youName, venue: cfg.venue, format: cfg.format, scoring: cfg.scoring,
+      youName, venue: cfg.venue,
+      venueAddress: cfg.venueAddress || null,
+      venueLat: cfg.venueLat || null,
+      venueLng: cfg.venueLng || null,
+      format: cfg.format, scoring: cfg.scoring,
       totalRounds: cfg.totalRounds, courts, pairings, roundIndex: 0, phase: 'scoring',
     };
     persistActive(next);
-    saveProfile({ ...profile, racket: cfg.gear.racket, side: cfg.gear.side });
+    if (cfg.gear) saveProfile({ ...profile, racket: cfg.gear.racket, side: cfg.gear.side });
+    setActiveLobby(null);
+    setLobbyJoinCode(null);
     setTab('live');
+  }
+
+  function handleLobbyStart(cfg) {
+    startMatch({ ...cfg, numCourts: cfg.numCourts || 1, gear: null });
   }
 
   function commitRound(scores) {
@@ -1458,8 +1886,12 @@ export default function App() {
       `}</style>
       <div className="max-w-md mx-auto">
         {tab === 'live' && <LiveTab active={active} onCommitRound={commitRound} onScoreMatch={scoreMatch} onSkipMatch={skipMatch} onFinish={finishSchedule} onSaveSession={saveSession} onDiscard={() => persistActive(null)} onGoNew={() => setTab('new')} />}
-        {tab === 'new' && <NewSessionSetup youName={youName} profile={profile} sessions={sessions} hasActive={!!active} onCancel={() => setTab(active ? 'live' : 'diary')} onStart={startMatch} />}
-        {tab === 'diary' && <DiaryScreen sessions={sessions} youName={youName} profile={profile} onUpdateProfile={saveProfile} onSignOut={signOut} />}
+        {tab === 'new' && !activeLobby && !lobbyJoinCode && <NewMenu onQuickMatch={() => setTab('quick')} onCreateLobby={() => setTab('lobby-setup')} onCancel={() => setTab(active ? 'live' : 'diary')} />}
+        {tab === 'quick' && <NewSessionSetup youName={youName} profile={profile} sessions={sessions} hasActive={!!active} onCancel={() => setTab('new')} onStart={startMatch} />}
+        {tab === 'lobby-setup' && <LobbySetup profile={profile} onCreated={(lobby) => { setActiveLobby(lobby); setTab('lobby-waiting'); }} onCancel={() => setTab('new')} />}
+        {tab === 'lobby-waiting' && activeLobby && <LobbyWaiting lobby={activeLobby} onStartMatch={handleLobbyStart} onBack={() => setTab('new')} />}
+        {lobbyJoinCode && user && <LobbyJoin code={lobbyJoinCode} youName={youName} onJoined={() => {}} onBack={() => setLobbyJoinCode(null)} />}
+        {tab === 'diary' && !lobbyJoinCode && <DiaryScreen sessions={sessions} youName={youName} profile={profile} onUpdateProfile={saveProfile} onSignOut={signOut} />}
       </div>
       <BottomNav tab={tab} onChange={setTab} hasActive={!!active} />
     </div>
