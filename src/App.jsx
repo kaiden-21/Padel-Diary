@@ -357,47 +357,67 @@ function SessionTicket({ session, youName, onClick }) {
 }
 
 // ---------- venue search (Google Places) ----------
+// Load the Google Maps JS SDK once and resolve when ready.
+let mapsPromise = null;
+function loadMapsSDK(apiKey) {
+  if (mapsPromise) return mapsPromise;
+  mapsPromise = new Promise((resolve) => {
+    if (window.google?.maps?.places) { resolve(window.google.maps.places); return; }
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.async = true;
+    script.onload = () => resolve(window.google.maps.places);
+    document.head.appendChild(script);
+  });
+  return mapsPromise;
+}
+
 function VenueSearch({ value, onChange, onSelect }) {
   const [query, setQuery] = useState(value || '');
   const [suggestions, setSuggestions] = useState([]);
-  const [busy, setBusy] = useState(false);
   const timerRef = useRef(null);
+  const serviceRef = useRef(null);
   const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
 
-  async function search(q) {
-    if (!q || q.length < 3) { setSuggestions([]); return; }
-    setBusy(true);
-    try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(q)}&types=establishment&key=${MAPS_KEY}&language=id`
-      );
-      const data = await res.json();
-      setSuggestions(data.predictions || []);
-    } catch (e) {
-      setSuggestions([]);
-    }
-    setBusy(false);
+  useEffect(() => {
+    if (!MAPS_KEY) return;
+    loadMapsSDK(MAPS_KEY).then((places) => {
+      serviceRef.current = new places.AutocompleteService();
+    });
+  }, [MAPS_KEY]);
+
+  function search(q) {
+    if (!q || q.length < 3 || !serviceRef.current) { setSuggestions([]); return; }
+    serviceRef.current.getPlacePredictions(
+      { input: q, types: ['establishment'] },
+      (predictions, status) => {
+        if (status === 'OK' && predictions) setSuggestions(predictions);
+        else setSuggestions([]);
+      }
+    );
   }
 
-  async function selectPlace(prediction) {
-    setQuery(prediction.description);
+  function selectPlace(prediction) {
+    setQuery(prediction.structured_formatting?.main_text || prediction.description);
     setSuggestions([]);
-    // Fetch place details for lat/lng
-    try {
-      const res = await fetch(
-        `https://maps.googleapis.com/maps/api/place/details/json?place_id=${prediction.place_id}&fields=geometry,formatted_address,name&key=${MAPS_KEY}`
-      );
-      const data = await res.json();
-      const result = data.result;
-      onSelect({
-        name: result.name || prediction.structured_formatting?.main_text || prediction.description,
-        address: result.formatted_address || prediction.description,
-        lat: result.geometry?.location?.lat || null,
-        lng: result.geometry?.location?.lng || null,
-      });
-    } catch (e) {
+    if (!window.google?.maps) {
       onSelect({ name: prediction.structured_formatting?.main_text || prediction.description, address: prediction.description, lat: null, lng: null });
+      return;
     }
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ placeId: prediction.place_id }, (results, status) => {
+      if (status === 'OK' && results[0]) {
+        const loc = results[0].geometry.location;
+        onSelect({
+          name: prediction.structured_formatting?.main_text || prediction.description,
+          address: results[0].formatted_address,
+          lat: loc.lat(),
+          lng: loc.lng(),
+        });
+      } else {
+        onSelect({ name: prediction.structured_formatting?.main_text || prediction.description, address: prediction.description, lat: null, lng: null });
+      }
+    });
   }
 
   function handleChange(val) {
