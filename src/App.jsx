@@ -22,6 +22,8 @@ import {
   toggleMemberSelected,
   startLobbyMatch,
   subscribeLobby,
+  deleteLobby,
+  getMyActiveLobby,
 } from './lib/supabase.js';
 
 const COLORS = {
@@ -696,7 +698,7 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
         <>
           <div className="flex gap-2 mb-1">
             {[16, 21, 32].map((p) => (
-              <button key={p} onClick={() => setPointsTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: pointsTarget === p ? COLORS.lime : 'transparent', color: COLORS.teal, borderColor: pointsTarget === p ? COLORS.lime : COLORS.glass }}>{p} pts</button>
+              <button key={p} onClick={() => setPointsTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: pointsTarget === p ? COLORS.green : 'transparent', color: pointsTarget === p ? COLORS.bg : COLORS.text, borderColor: pointsTarget === p ? COLORS.green : COLORS.border }}>{p} pts</button>
             ))}
           </div>
           <p className="text-xs mb-4" style={{ color: COLORS.glass }}>Each game is played to {pointsTarget} total points, split between the teams.</p>
@@ -1180,7 +1182,7 @@ function ProfileEditor({ youName, profile, onSave, onBack, onSignOut }) {
       <div className="flex flex-col items-center mb-6">
         <button onClick={() => fileRef.current && fileRef.current.click()} className="relative" aria-label="Change photo">
           <Avatar photo={photo} name={youName} size={96} />
-          <span className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.lime }}><Camera size={16} color={COLORS.teal} /></span>
+          <span className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center border-2" style={{ backgroundColor: COLORS.green, borderColor: COLORS.bg }}><Camera size={16} color={COLORS.bg} /></span>
         </button>
         <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{ display: 'none' }} />
         <p className="font-display text-xl mt-3" style={{ color: COLORS.teal }}>{youName}</p>
@@ -1202,8 +1204,8 @@ function ProfileEditor({ youName, profile, onSave, onBack, onSignOut }) {
 
       <label className="block text-xs font-mono uppercase mb-2" style={{ color: COLORS.glass }}>Gender</label>
       <div className="flex flex-wrap gap-2 mb-5">
-        {['Male', 'Female', 'Other', 'Prefer not to say'].map((g) => (
-          <button key={g} onClick={() => setGender(g)} className="px-3 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: gender === g ? COLORS.teal : 'transparent', color: gender === g ? COLORS.cream : COLORS.teal, borderColor: COLORS.teal }}>{g}</button>
+        {['Male', 'Female'].map((g) => (
+          <button key={g} onClick={() => setGender(g)} className="px-4 py-2.5 rounded-lg text-sm font-medium border flex-1" style={{ backgroundColor: gender === g ? COLORS.green : 'transparent', color: gender === g ? COLORS.bg : COLORS.text, borderColor: gender === g ? COLORS.green : COLORS.border }}>{g}</button>
         ))}
       </div>
 
@@ -1219,9 +1221,10 @@ function ProfileEditor({ youName, profile, onSave, onBack, onSignOut }) {
 }
 
 // ---------- diary hub ----------
-function DiaryScreen({ sessions, youName, profile, onUpdateProfile, onSignOut, following, onFollow, onUnfollow }) {
+function DiaryScreen({ sessions, youName, profile, onUpdateProfile, onSignOut, following, onFollow, onUnfollow, user }) {
   const [filter, setFilter] = useState('all');
   const [view, setView] = useState({ type: 'home' });
+  const [searchResults, setSearchResults] = useState([]);
 
   // Stats
   const stats = useMemo(() => {
@@ -1325,10 +1328,9 @@ function DiaryScreen({ sessions, youName, profile, onUpdateProfile, onSignOut, f
       <p className="text-sm mb-5" style={{ color: COLORS.muted }}>{monthLabel} &middot; {sessions.length} match{sessions.length !== 1 ? 'es' : ''} logged</p>
 
       {/* Stats bar */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-2 gap-3 mb-5">
         {[
           { label: 'WIN RATE', value: `${stats.winRate}%`, icon: '🏆' },
-          { label: 'STREAK', value: `${stats.streak}${stats.streakType}`, icon: '🔥' },
           { label: 'RATING', value: '—', icon: '📈' },
         ].map((s) => (
           <div key={s.label} className="rounded-2xl p-3" style={{ backgroundColor: COLORS.card }}>
@@ -1353,17 +1355,9 @@ function DiaryScreen({ sessions, youName, profile, onUpdateProfile, onSignOut, f
       {/* Matches segment */}
       {(view.seg === 'matches' || !view.seg) && (
         <>
-          {/* Filter chips */}
-          <div className="flex gap-2 overflow-x-auto pb-1 mb-4 scrollbar-hide">
-            {[{ k: 'all', label: 'All' }, { k: 'wins', label: 'Wins' }, { k: 'losses', label: 'Losses' }, { k: '5star', label: '5★' }, { k: 'month', label: 'This month' }].map((f) => (
-              <button key={f.k} onClick={() => setFilter(f.k)} className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 border" style={{ backgroundColor: filter === f.k ? COLORS.green : 'transparent', color: filter === f.k ? COLORS.bg : COLORS.muted, borderColor: filter === f.k ? COLORS.green : COLORS.border }}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-          {filteredSessions.length === 0
-            ? <Empty text={filter === 'all' ? "No matches yet. Tap + to play your first one." : "No matches for this filter."} />
-            : filteredSessions.map((s) => <SessionTicket key={s.id} session={s} youName={youName} onClick={() => setView({ type: 'session', id: s.id })} />)
+          {sessions.length === 0
+            ? <Empty text="No matches yet. Tap + to play your first one." />
+            : [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date)).map((s) => <SessionTicket key={s.id} session={s} youName={youName} onClick={() => setView({ type: 'session', id: s.id })} />)
           }
         </>
       )}
@@ -1396,30 +1390,115 @@ function DiaryScreen({ sessions, youName, profile, onUpdateProfile, onSignOut, f
       {/* Network segment */}
       {view.seg === 'network' && (
         <>
-          <p className="text-xs mb-4" style={{ color: COLORS.muted }}>People you've played with — follow them to add quickly when building a lobby.</p>
+          {/* Search bar */}
+          <div className="relative mb-4">
+            <Search size={16} color={COLORS.muted} className="absolute left-3 top-3" />
+            <input
+              placeholder="Search players by name…"
+              className="w-full pl-9 pr-3 py-2.5 rounded-lg border text-sm"
+              style={{ backgroundColor: COLORS.card, color: COLORS.text, borderColor: COLORS.border }}
+              onChange={(e) => {
+                const q = e.target.value.trim();
+                if (q.length >= 2) searchProfiles(q).then((r) => setSearchResults(r)).catch(() => {});
+                else setSearchResults([]);
+              }}
+            />
+          </div>
+
+          {searchResults.length > 0 && (
+            <div className="mb-4">
+              <p className="font-mono text-xs uppercase mb-2" style={{ color: COLORS.muted }}>Search results</p>
+              {searchResults.map((p) => {
+                const isFollowing = followingNames.has(p.name);
+                return (
+                  <div key={p.id} className="flex items-center gap-3 p-3 rounded-2xl mb-2" style={{ backgroundColor: COLORS.card }}>
+                    <Avatar photo={p.photo_url} name={p.name} size={40} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium" style={{ color: COLORS.text }}>{p.name}</div>
+                    </div>
+                    {user && (
+                      <button onClick={() => isFollowing ? onUnfollow(p.name) : onFollow(p.name)} className="px-3 py-1.5 rounded-full text-xs font-bold border" style={{ backgroundColor: isFollowing ? 'transparent' : COLORS.green, color: isFollowing ? COLORS.muted : COLORS.bg, borderColor: isFollowing ? COLORS.border : COLORS.green }}>
+                        {isFollowing ? 'Following' : 'Follow'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <p className="text-xs mb-3" style={{ color: COLORS.muted }}>People you've played with</p>
           {networkPlayers.length === 0 ? (
             <Empty text="Play a match first to see people you've played with." />
           ) : networkPlayers.map((name) => {
             const isFollowing = followingNames.has(name);
+            const rivalStats = rivalMap[name] || { partnerRounds: 0, partnerWins: 0, oppRounds: 0, oppWins: 0 };
             return (
-              <div key={name} className="flex items-center gap-3 p-3 rounded-2xl mb-3" style={{ backgroundColor: COLORS.card }}>
-                <Avatar name={name} size={44} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium" style={{ color: COLORS.text }}>{name}</div>
-                  <div className="font-mono text-xs" style={{ color: COLORS.muted }}>Played together</div>
-                </div>
-                <button
-                  onClick={() => isFollowing ? onUnfollow(name) : onFollow(name)}
-                  className="px-3 py-1.5 rounded-full text-xs font-bold border"
-                  style={{ backgroundColor: isFollowing ? 'transparent' : COLORS.green, color: isFollowing ? COLORS.muted : COLORS.bg, borderColor: isFollowing ? COLORS.border : COLORS.green }}
-                >
-                  {isFollowing ? 'Following' : 'Follow'}
+              <div key={name} className="rounded-2xl mb-3 overflow-hidden" style={{ backgroundColor: COLORS.card }}>
+                <button onClick={() => setView({ type: 'network-player', id: name })} className="w-full flex items-center gap-3 p-3 text-left">
+                  <Avatar name={name} size={44} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium" style={{ color: COLORS.text }}>{name}</div>
+                    <div className="font-mono text-xs" style={{ color: COLORS.muted }}>
+                      {rivalStats.oppRounds > 0 ? `${rivalStats.oppWins}W-${rivalStats.oppRounds - rivalStats.oppWins}L vs you` : 'No matches yet'}
+                    </div>
+                  </div>
+                  {user && (
+                    <button onClick={(e) => { e.stopPropagation(); isFollowing ? onUnfollow(name) : onFollow(name); }} className="px-3 py-1.5 rounded-full text-xs font-bold border flex-shrink-0" style={{ backgroundColor: isFollowing ? 'transparent' : COLORS.green, color: isFollowing ? COLORS.muted : COLORS.bg, borderColor: isFollowing ? COLORS.border : COLORS.green }}>
+                      {isFollowing ? 'Following' : 'Follow'}
+                    </button>
+                  )}
                 </button>
               </div>
             );
           })}
         </>
       )}
+
+      {/* Network player profile view */}
+      {view.type === 'network-player' && (() => {
+        const name = view.id;
+        const rivalStats = rivalMap[name] || { partnerRounds: 0, partnerWins: 0, oppRounds: 0, oppWins: 0 };
+        const isFollowing = followingNames.has(name);
+        const oppWinRate = rivalStats.oppRounds > 0 ? Math.round((rivalStats.oppWins / rivalStats.oppRounds) * 100) : 0;
+        const partnerWinRate = rivalStats.partnerRounds > 0 ? Math.round((rivalStats.partnerWins / rivalStats.partnerRounds) * 100) : 0;
+        return (
+          <div className="px-5 pt-6 pb-28">
+            <button onClick={() => setView({ type: 'home', seg: 'network' })} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.muted }}><ChevronLeft size={18} /> Back</button>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <Avatar name={name} size={60} />
+                <div>
+                  <h2 className="font-display text-2xl" style={{ color: COLORS.green }}>{name}</h2>
+                  <p className="text-xs" style={{ color: COLORS.muted }}>Padel rival</p>
+                </div>
+              </div>
+              {user && (
+                <button onClick={() => isFollowing ? onUnfollow(name) : onFollow(name)} className="px-4 py-2 rounded-full text-sm font-bold border" style={{ backgroundColor: isFollowing ? 'transparent' : COLORS.green, color: isFollowing ? COLORS.muted : COLORS.bg, borderColor: isFollowing ? COLORS.border : COLORS.green }}>
+                  {isFollowing ? 'Following' : 'Follow'}
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-6">
+              <div className="rounded-2xl p-4" style={{ backgroundColor: COLORS.card }}>
+                <div className="font-mono text-[10px] mb-1" style={{ color: COLORS.muted }}>WIN RATE VS THEM</div>
+                <div className="font-display text-3xl" style={{ color: COLORS.green }}>{oppWinRate}%</div>
+                <div className="font-mono text-xs" style={{ color: COLORS.muted }}>{rivalStats.oppWins}W — {rivalStats.oppRounds - rivalStats.oppWins}L</div>
+              </div>
+              <div className="rounded-2xl p-4" style={{ backgroundColor: COLORS.card }}>
+                <div className="font-mono text-[10px] mb-1" style={{ color: COLORS.muted }}>AS PARTNERS</div>
+                <div className="font-display text-3xl" style={{ color: COLORS.text }}>{partnerWinRate}%</div>
+                <div className="font-mono text-xs" style={{ color: COLORS.muted }}>{rivalStats.partnerRounds} rounds together</div>
+              </div>
+            </div>
+            <div className="rounded-2xl p-4" style={{ backgroundColor: COLORS.card }}>
+              <div className="font-mono text-[10px] mb-2" style={{ color: COLORS.muted }}>RATING</div>
+              <div className="font-display text-2xl" style={{ color: COLORS.muted }}>— Coming soon</div>
+              <div className="text-xs mt-1" style={{ color: COLORS.muted }}>Glicko-2 rating system in development</div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -1430,6 +1509,7 @@ function Empty({ text }) {
 
 // ---------- lobby ----------
 function LobbySetup({ profile, onCreated, onCancel }) {
+  const [lobbyName, setLobbyName] = useState('');
   const [venue, setVenue] = useState('');
   const [venueAddress, setVenueAddress] = useState('');
   const [venueLat, setVenueLat] = useState(null);
@@ -1444,11 +1524,11 @@ function LobbySetup({ profile, onCreated, onCancel }) {
   const [error, setError] = useState('');
 
   async function create() {
-    if (!venue.trim()) { setError('Add a venue first.'); return; }
+    if (!lobbyName.trim()) { setError('Add a lobby name first.'); return; }
     setBusy(true);
     try {
       const scoring = scoreMode === 'points' ? { mode: 'points', target: pointsTarget } : { mode: 'tennis', target: tennisTarget };
-      const lobby = await createLobby({ venue: venue.trim(), venueAddress, venueLat, venueLng, format, scoring, totalRounds: rounds, numCourts });
+      const lobby = await createLobby({ lobbyName: lobbyName.trim(), venue: venue.trim(), venueAddress, venueLat, venueLng, format, scoring, totalRounds: rounds, numCourts });
       onCreated(lobby);
     } catch (e) {
       setError(e.message || 'Could not create lobby.');
@@ -1458,13 +1538,16 @@ function LobbySetup({ profile, onCreated, onCancel }) {
 
   return (
     <div className="px-5 pt-6 pb-28">
-      <button onClick={onCancel} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.glass }}><ChevronLeft size={18} /> Back</button>
-      <h2 className="font-display text-2xl tracking-wide mb-1" style={{ color: COLORS.teal }}>CREATE LOBBY</h2>
-      <p className="text-sm mb-5" style={{ color: COLORS.glass }}>Set up the match, share the link, friends join the waiting room.</p>
+      <button onClick={onCancel} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.muted }}><ChevronLeft size={18} /> Back</button>
+      <h2 className="font-display text-2xl tracking-wide mb-1" style={{ color: COLORS.green }}>CREATE LOBBY</h2>
+      <p className="text-sm mb-5" style={{ color: COLORS.muted }}>Set up the match, share the link, friends join the waiting room.</p>
 
-      <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Venue</label>
+      <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.muted }}>Lobby name</label>
+      <input value={lobbyName} onChange={(e) => setLobbyName(e.target.value)} placeholder="e.g. Tuesday Night Padel" className="w-full px-3 py-2.5 rounded-lg border mb-4 text-sm" style={{ backgroundColor: COLORS.card, color: COLORS.text, borderColor: COLORS.border }} />
+
+      <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.muted }}>Venue</label>
       <VenueSearch value={venue} onChange={setVenue} onSelect={(p) => { setVenue(p.name); setVenueAddress(p.address); setVenueLat(p.lat); setVenueLng(p.lng); }} />
-      {venueAddress && <p className="text-xs -mt-2 mb-4 flex items-center gap-1" style={{ color: COLORS.glass }}><MapPin size={12} />{venueAddress}</p>}
+      {venueAddress && <p className="text-xs -mt-2 mb-4 flex items-center gap-1" style={{ color: COLORS.muted }}><MapPin size={12} />{venueAddress}</p>}
 
       <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Format</label>
       <div className="flex gap-2 mb-2">
@@ -1501,9 +1584,10 @@ function LobbySetup({ profile, onCreated, onCancel }) {
   );
 }
 
-function LobbyWaiting({ lobby, onStartMatch, onBack }) {
+function LobbyWaiting({ lobby, onStartMatch, onBack, onDelete }) {
   const [members, setMembers] = useState([]);
   const [copying, setCopying] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const shareUrl = `${window.location.origin}/lobby/${lobby.code}`;
 
   async function load() {
@@ -1536,16 +1620,23 @@ function LobbyWaiting({ lobby, onStartMatch, onBack }) {
     onStartMatch({ lobby, players: players.map((p) => p.name), scoring: lobby.scoring, format: lobby.format, totalRounds: lobby.total_rounds, numCourts: lobby.num_courts, venue: lobby.venue, venueAddress: lobby.venue_address, venueLat: lobby.venue_lat, venueLng: lobby.venue_lng });
   }
 
+  async function handleDelete() {
+    try {
+      await deleteLobby(lobby.id);
+      onDelete();
+    } catch (e) { alert('Could not close lobby.'); }
+  }
+
   const selected = members.filter((m) => m.selected);
 
   return (
     <div className="px-5 pt-6 pb-28">
-      <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.glass }}><ChevronLeft size={18} /> Back</button>
-      <h2 className="font-display text-2xl tracking-wide mb-1" style={{ color: COLORS.teal }}>LOBBY</h2>
-      <p className="text-sm mb-4" style={{ color: COLORS.glass }}>{lobby.venue} &middot; {lobby.format} &middot; {lobby.total_rounds} rounds</p>
+      <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.muted }}><ChevronLeft size={18} /> Back</button>
+      <h2 className="font-display text-2xl tracking-wide mb-0.5" style={{ color: COLORS.green }}>{lobby.lobby_name || 'LOBBY'}</h2>
+      <p className="text-sm mb-4" style={{ color: COLORS.muted }}>{lobby.venue || 'No venue'} &middot; {lobby.format} &middot; {lobby.total_rounds} rounds</p>
 
       <div className="rounded-2xl p-4 mb-5" style={{ backgroundColor: COLORS.card }}>
-        <p className="font-mono text-xs mb-2" style={{ color: COLORS.lime }}>SHARE THIS LINK</p>
+        <p className="font-mono text-xs mb-2" style={{ color: COLORS.green }}>SHARE THIS LINK</p>
         <p className="text-sm mb-3 break-all" style={{ color: COLORS.text }}>{shareUrl}</p>
         <button onClick={copyLink} className="w-full py-2.5 rounded-lg font-display tracking-wide flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
           <Link size={16} /> {copying ? 'COPIED!' : 'COPY LINK'}
@@ -1553,37 +1644,49 @@ function LobbyWaiting({ lobby, onStartMatch, onBack }) {
       </div>
 
       <div className="flex items-center justify-between mb-3">
-        <p className="font-mono text-xs uppercase" style={{ color: COLORS.glass }}>In the lobby ({members.length})</p>
-        <p className="font-mono text-xs" style={{ color: COLORS.glass }}>{selected.length} selected</p>
+        <p className="font-mono text-xs uppercase" style={{ color: COLORS.muted }}>In the lobby ({members.length})</p>
+        <p className="font-mono text-xs" style={{ color: COLORS.muted }}>{selected.length} selected</p>
       </div>
 
       {members.length === 0 && (
         <div className="text-center py-10 rounded-2xl mb-5" style={{ backgroundColor: COLORS.card }}>
-          <Users size={28} color={COLORS.glass} className="mx-auto mb-2" />
-          <p className="text-sm" style={{ color: COLORS.glass }}>Waiting for friends to join…</p>
+          <Users size={28} color={COLORS.muted} className="mx-auto mb-2" />
+          <p className="text-sm" style={{ color: COLORS.muted }}>Waiting for friends to join…</p>
         </div>
       )}
 
       <div className="space-y-2 mb-6">
         {members.map((m) => (
-          <button key={m.id} onClick={() => toggle(m)} className="w-full flex items-center gap-3 p-3 rounded-2xl" style={{ backgroundColor: m.selected ? COLORS.teal : '#fff' }}>
+          <button key={m.id} onClick={() => toggle(m)} className="w-full flex items-center gap-3 p-3 rounded-2xl" style={{ backgroundColor: m.selected ? COLORS.cardLight : COLORS.card, border: `1px solid ${m.selected ? COLORS.green : COLORS.border}` }}>
             <Avatar photo={m.profile?.photo_url} name={m.profile?.name} size={44} />
             <div className="flex-1 text-left min-w-0">
-              <p className="text-sm font-medium truncate" style={{ color: m.selected ? COLORS.cream : COLORS.ink }}>{m.profile?.name}</p>
-              <p className="font-mono text-xs" style={{ color: m.selected ? COLORS.lime : COLORS.glass }}>
+              <p className="text-sm font-medium truncate" style={{ color: COLORS.text }}>{m.profile?.name}</p>
+              <p className="font-mono text-xs" style={{ color: COLORS.muted }}>
                 {m.profile?.racket || m.profile?.rackets_owned || 'No racket'} &middot; {m.profile?.side || 'Right'} side
               </p>
             </div>
-            <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: m.selected ? COLORS.lime : 'transparent', border: m.selected ? 'none' : '2px solid ' + COLORS.glass }}>
-              {m.selected && <Check size={14} color={COLORS.teal} />}
+            <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: m.selected ? COLORS.green : 'transparent', border: m.selected ? 'none' : `2px solid ${COLORS.border}` }}>
+              {m.selected && <Check size={14} color={COLORS.bg} />}
             </div>
           </button>
         ))}
       </div>
 
-      <button onClick={handleStart} disabled={selected.length < 4} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
+      <button onClick={handleStart} disabled={selected.length < 4} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40 mb-3" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
         START MATCH ({selected.length} players)
       </button>
+
+      {!confirmDelete ? (
+        <button onClick={() => setConfirmDelete(true)} className="w-full py-2.5 text-sm" style={{ color: COLORS.red }}>Close lobby</button>
+      ) : (
+        <div className="rounded-2xl p-4" style={{ backgroundColor: COLORS.card, border: `1px solid ${COLORS.red}` }}>
+          <p className="text-sm mb-3 text-center" style={{ color: COLORS.text }}>Close this lobby? Members will no longer be able to join.</p>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirmDelete(false)} className="flex-1 py-2.5 rounded-lg text-sm border" style={{ color: COLORS.muted, borderColor: COLORS.border }}>Cancel</button>
+            <button onClick={handleDelete} className="flex-1 py-2.5 rounded-lg text-sm font-medium" style={{ backgroundColor: COLORS.red, color: '#fff' }}>Close lobby</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1679,14 +1782,14 @@ function LobbyJoin({ code, youName, onJoined, onBack }) {
 }
 
 // ---------- nav + onboarding ----------
-function BottomNav({ tab, onChange, hasActive }) {
+function BottomNav({ tab, onChange, hasActive, hasLobby }) {
   return (
     <div className="fixed bottom-0 left-0 right-0">
       <div className="max-w-md mx-auto flex items-center justify-around px-6 py-3" style={{ backgroundColor: COLORS.card, borderTop: `1px solid ${COLORS.border}` }}>
         <button onClick={() => onChange('live')} className="flex flex-col items-center gap-0.5 relative">
           <Play size={20} color={tab === 'live' ? COLORS.green : COLORS.muted} fill={tab === 'live' ? COLORS.green : 'none'} />
           <span className="text-[10px] font-mono" style={{ color: tab === 'live' ? COLORS.green : COLORS.muted }}>Live</span>
-          {hasActive && <span className="absolute -top-1 right-1 w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.red }} />}
+          {(hasActive || hasLobby) && <span className="absolute -top-1 right-1 w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.green }} />}
         </button>
         <button onClick={() => onChange('new')} className="w-14 h-14 rounded-full flex items-center justify-center -mt-6 shadow-lg" style={{ backgroundColor: COLORS.green }}><Plus size={26} color={COLORS.bg} /></button>
         <button onClick={() => onChange('diary')} className="flex flex-col items-center gap-0.5">
@@ -1802,7 +1905,7 @@ function AuthScreen() {
               onKeyDown={(e) => e.key === 'Enter' && submitEmail()}
               placeholder="you@example.com"
               className="w-full px-4 py-3 rounded-lg mb-3 text-sm"
-              style={{ backgroundColor: COLORS.cream, color: COLORS.ink }}
+              style={{ backgroundColor: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` }}
             />
             {error && <p className="text-sm mb-3" style={{ color: COLORS.lime }}>{error}</p>}
             <button onClick={submitEmail} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-50" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
@@ -1831,7 +1934,7 @@ function ProfileSetup({ defaultName, onSubmit }) {
     setBusy(false);
   }
 
-  const fieldStyle = { backgroundColor: COLORS.cream, color: COLORS.ink };
+  const fieldStyle = { backgroundColor: COLORS.card, color: COLORS.text, border: `1px solid ${COLORS.border}` };
 
   return (
     <div className="min-h-screen flex flex-col justify-center px-8 py-10" style={{ backgroundColor: COLORS.bg }}>
@@ -1846,9 +1949,9 @@ function ProfileSetup({ defaultName, onSubmit }) {
         <input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className="w-full px-4 py-3 rounded-lg mb-4 text-sm" style={fieldStyle} />
 
         <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.lime }}>Gender</label>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {['Male', 'Female', 'Other', 'Prefer not to say'].map((g) => (
-            <button key={g} onClick={() => setGender(g)} className="px-3 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: gender === g ? COLORS.lime : 'transparent', color: gender === g ? COLORS.teal : COLORS.cream, borderColor: COLORS.lime }}>{g}</button>
+        <div className="flex gap-2 mb-4">
+          {['Male', 'Female'].map((g) => (
+            <button key={g} onClick={() => setGender(g)} className="px-4 py-2.5 rounded-lg text-sm font-medium border flex-1" style={{ backgroundColor: gender === g ? COLORS.green : 'transparent', color: gender === g ? COLORS.bg : COLORS.text, borderColor: gender === g ? COLORS.green : COLORS.border }}>{g}</button>
           ))}
         </div>
 
@@ -1887,12 +1990,16 @@ export default function App() {
     if (match) setLobbyJoinCode(match[1]);
   }, []);
 
-  // The in-progress match is a draft, not a real record yet — keep it in the
-  // browser only, the same way it worked locally. Real sessions go to Supabase.
+  // The in-progress match is a draft — keep in browser only.
   useEffect(() => {
     try {
       const raw = localStorage.getItem('padel-diary-active');
       if (raw) setActive(JSON.parse(raw));
+    } catch (e) {}
+    // Restore active lobby from localStorage
+    try {
+      const rawLobby = localStorage.getItem('padel-diary-lobby');
+      if (rawLobby) setActiveLobby(JSON.parse(rawLobby));
     } catch (e) {}
   }, []);
 
@@ -1901,6 +2008,14 @@ export default function App() {
     try {
       if (next) localStorage.setItem('padel-diary-active', JSON.stringify(next));
       else localStorage.removeItem('padel-diary-active');
+    } catch (e) {}
+  }
+
+  function persistLobby(next) {
+    setActiveLobby(next);
+    try {
+      if (next) localStorage.setItem('padel-diary-lobby', JSON.stringify(next));
+      else localStorage.removeItem('padel-diary-lobby');
     } catch (e) {}
   }
 
@@ -2138,15 +2253,15 @@ export default function App() {
         input:focus, button:focus-visible { outline: 2px solid #4D7C82; outline-offset: 1px; }
       `}</style>
       <div className="max-w-md mx-auto">
-        {tab === 'live' && <LiveTab active={active} onCommitRound={commitRound} onScoreMatch={scoreMatch} onSkipMatch={skipMatch} onFinish={finishSchedule} onSaveSession={saveSession} onDiscard={() => persistActive(null)} onGoNew={() => setTab('new')} />}
+        {tab === 'live' && !activeLobby && <LiveTab active={active} onCommitRound={commitRound} onScoreMatch={scoreMatch} onSkipMatch={skipMatch} onFinish={finishSchedule} onSaveSession={saveSession} onDiscard={() => persistActive(null)} onGoNew={() => setTab('new')} />}
+        {tab === 'live' && activeLobby && !active && <LobbyWaiting lobby={activeLobby} onStartMatch={handleLobbyStart} onBack={() => setTab('diary')} onDelete={() => { persistLobby(null); setTab('diary'); }} />}
         {tab === 'new' && !activeLobby && !lobbyJoinCode && <NewMenu onQuickMatch={() => setTab('quick')} onCreateLobby={() => setTab('lobby-setup')} onCancel={() => setTab(active ? 'live' : 'diary')} />}
         {tab === 'quick' && <NewSessionSetup youName={youName} profile={profile} sessions={sessions} hasActive={!!active} onCancel={() => setTab('new')} onStart={startMatch} />}
-        {tab === 'lobby-setup' && <LobbySetup profile={profile} onCreated={(lobby) => { setActiveLobby(lobby); setTab('lobby-waiting'); }} onCancel={() => setTab('new')} />}
-        {tab === 'lobby-waiting' && activeLobby && <LobbyWaiting lobby={activeLobby} onStartMatch={handleLobbyStart} onBack={() => setTab('new')} />}
+        {tab === 'lobby-setup' && <LobbySetup profile={profile} onCreated={(lobby) => { persistLobby(lobby); setTab('live'); }} onCancel={() => setTab('new')} />}
         {lobbyJoinCode && user && <LobbyJoin code={lobbyJoinCode} youName={youName} onJoined={() => {}} onBack={() => setLobbyJoinCode(null)} />}
-        {tab === 'diary' && !lobbyJoinCode && <DiaryScreen sessions={sessions} youName={youName} profile={profile} onUpdateProfile={saveProfile} onSignOut={signOut} following={following} onFollow={handleFollow} onUnfollow={handleUnfollow} />}
+        {tab === 'diary' && !lobbyJoinCode && <DiaryScreen sessions={sessions} youName={youName} profile={profile} onUpdateProfile={saveProfile} onSignOut={signOut} following={following} onFollow={handleFollow} onUnfollow={handleUnfollow} user={user} />}
       </div>
-      <BottomNav tab={tab} onChange={setTab} hasActive={!!active} />
+      <BottomNav tab={tab} onChange={setTab} hasActive={!!active} hasLobby={!!activeLobby} />
     </div>
   );
 }

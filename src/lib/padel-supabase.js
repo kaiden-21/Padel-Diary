@@ -218,7 +218,12 @@ export async function listFollowing() {
 // GOOGLE OAUTH
 // ---------------------------------------------------------------------
 
-
+export function signInWithGoogle() {
+  return supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: window.location.origin },
+  });
+}
 
 // ---------------------------------------------------------------------
 // LOBBIES
@@ -232,6 +237,7 @@ export async function createLobby(cfg) {
     .from('lobbies')
     .insert({
       host_id: user.id,
+      lobby_name: cfg.lobbyName || null,
       venue: cfg.venue || null,
       venue_address: cfg.venueAddress || null,
       venue_lat: cfg.venueLat || null,
@@ -318,3 +324,24 @@ export function subscribeLobby(lobbyId, onUpdate) {
   return () => supabase.removeChannel(channel);
 }
 
+// Delete a lobby (host only — RLS enforces this on the server).
+export async function deleteLobby(lobbyId) {
+  const { error } = await supabase.from('lobbies').delete().eq('id', lobbyId);
+  if (error) throw error;
+}
+
+// Fetch the most recent open lobby the current user is hosting, if any.
+export async function getMyActiveLobby() {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  const { data, error } = await supabase
+    .from('lobbies')
+    .select('*')
+    .eq('host_id', user.id)
+    .eq('status', 'open')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
