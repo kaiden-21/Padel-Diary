@@ -215,15 +215,7 @@ export async function listFollowing() {
 }
 
 // ---------------------------------------------------------------------
-// GOOGLE OAUTH
-// ---------------------------------------------------------------------
 
-export function signInWithGoogle() {
-  return supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: window.location.origin },
-  });
-}
 
 // ---------------------------------------------------------------------
 // LOBBIES
