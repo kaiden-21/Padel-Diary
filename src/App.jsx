@@ -294,7 +294,7 @@ function Avatar({ photo, name, size = 44 }) {
   return (
     <div
       className="font-display flex items-center justify-center flex-shrink-0"
-      style={{ width: size, height: size, borderRadius: '50%', backgroundColor: COLORS.teal, color: COLORS.lime }}
+      style={{ width: size, height: size, borderRadius: '50%', backgroundColor: COLORS.cardLight, color: COLORS.green }}
     >
       <span style={{ fontSize: size * 0.42 }}>{(name || '?').charAt(0).toUpperCase()}</span>
     </div>
@@ -797,21 +797,21 @@ function ScoringView({ active, onCommitRound, onDiscard }) {
         <span className="font-mono text-xs uppercase truncate ml-2" style={{ color: COLORS.glass }}>{venue}</span>
       </div>
       <div className="text-center mb-6">
-        <div className="inline-block px-4 py-2 rounded-full font-mono text-sm" style={{ backgroundColor: COLORS.teal, color: COLORS.lime }}>ROUND {roundIndex + 1} / {totalRounds}</div>
+        <div className="inline-block px-4 py-2 rounded-full font-mono text-sm" style={{ backgroundColor: COLORS.card, color: COLORS.green }}>ROUND {roundIndex + 1} / {totalRounds}</div>
       </div>
 
       {courts.map((c, idx) => (
-        <div key={idx} className="rounded-2xl p-4 mb-4" style={{ backgroundColor: COLORS.teal }}>
+        <div key={idx} className="rounded-2xl p-4 mb-4" style={{ backgroundColor: COLORS.card }}>
           <div className="flex items-center justify-between mb-2">
             <div className="font-mono text-xs" style={{ color: COLORS.lime }}>{courts.length > 1 ? `COURT ${idx + 1}` : 'MATCH'}</div>
-            <div className="font-mono text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: COLORS.glass, color: COLORS.cream }}>{scoring.mode === 'points' ? `TO ${scoring.target} PTS` : `FIRST TO ${scoring.target}`}</div>
+            <div className="font-mono text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: COLORS.glass, color: COLORS.text }}>{scoring.mode === 'points' ? `TO ${scoring.target} PTS` : `FIRST TO ${scoring.target}`}</div>
           </div>
           <div className="flex items-center justify-between gap-3">
             {['a', 'b'].map((side, sIdx) => (
               <React.Fragment key={side}>
                 {sIdx === 1 && <div className="font-display text-sm" style={{ color: COLORS.glass }}>VS</div>}
                 <div className="flex-1 text-center min-w-0">
-                  <div className="text-sm mb-2 truncate" style={{ color: COLORS.cream }}>{(side === 'a' ? pairings[idx].teamA : pairings[idx].teamB).join(' & ')}</div>
+                  <div className="text-sm mb-2 truncate" style={{ color: COLORS.text }}>{(side === 'a' ? pairings[idx].teamA : pairings[idx].teamB).join(' & ')}</div>
                   <div className="flex items-center justify-center gap-2">
                     <button onClick={() => adjust(idx, side, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.glass }}><Minus size={14} color="#fff" /></button>
                     <input value={inputs[idx][side]} onChange={(e) => setVal(idx, side, e.target.value)} inputMode="numeric" className="w-12 text-center font-display text-2xl bg-transparent border-b-2" style={{ color: COLORS.lime, borderColor: COLORS.lime }} />
@@ -822,7 +822,7 @@ function ScoringView({ active, onCommitRound, onDiscard }) {
             ))}
           </div>
           {sitting[idx].length > 0 && (
-            <div className="font-mono text-[11px] mt-3 pt-2" style={{ color: COLORS.cream, borderTop: '1px dashed ' + COLORS.glass }}>Sitting out: {sitting[idx].join(', ')}</div>
+            <div className="font-mono text-[11px] mt-3 pt-2" style={{ color: COLORS.text, borderTop: '1px dashed ' + COLORS.glass }}>Sitting out: {sitting[idx].join(', ')}</div>
           )}
         </div>
       ))}
@@ -888,7 +888,7 @@ function MatchRow({ match, scoring, courtLabel, onScore, onSkip }) {
   }
 
   return (
-    <div className="rounded-2xl p-4 mb-3" style={{ backgroundColor: COLORS.teal }}>
+    <div className="rounded-2xl p-4 mb-3" style={{ backgroundColor: COLORS.card }}>
       <div className="flex items-center justify-between mb-2">
         <span className="font-mono text-xs" style={{ color: COLORS.lime }}>ROUND {match.round} &middot; {courtLabel}</span>
         {statusTag && (
@@ -900,7 +900,7 @@ function MatchRow({ match, scoring, courtLabel, onScore, onSkip }) {
           <React.Fragment key={side}>
             {sIdx === 1 && <div className="font-display text-sm" style={{ color: COLORS.glass }}>VS</div>}
             <div className="flex-1 text-center min-w-0">
-              <div className="text-sm mb-2 truncate" style={{ color: COLORS.cream }}>{(side === 'a' ? match.teamA : match.teamB).join(' & ')}</div>
+              <div className="text-sm mb-2 truncate" style={{ color: COLORS.text }}>{(side === 'a' ? match.teamA : match.teamB).join(' & ')}</div>
               <div className="flex items-center justify-center gap-2">
                 <button onClick={() => adjust(side, -1)} className="w-7 h-7 rounded-full flex items-center justify-center" style={{ backgroundColor: COLORS.glass }}><Minus size={14} color="#fff" /></button>
                 <input value={side === 'a' ? a : b} onChange={(e) => setVal(side, e.target.value)} inputMode="numeric" className="w-12 text-center font-display text-2xl bg-transparent border-b-2" style={{ color: COLORS.lime, borderColor: COLORS.lime }} />
@@ -912,7 +912,7 @@ function MatchRow({ match, scoring, courtLabel, onScore, onSkip }) {
       </div>
       <div className="flex gap-2 mt-3">
         {match.status !== 'skipped' && (
-          <button onClick={onSkip} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: 'transparent', color: COLORS.cream, border: '1px solid ' + COLORS.glass }}>Skip for now</button>
+          <button onClick={onSkip} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: 'transparent', color: COLORS.text, border: '1px solid ' + COLORS.glass }}>Skip for now</button>
         )}
         <button
           onClick={() => { onScore(Number(a), Number(b)); setEditing(false); }}
@@ -963,7 +963,7 @@ function ScheduleView({ active, onScoreMatch, onSkipMatch, onFinish, onDiscard }
         <span className="font-mono text-xs uppercase truncate ml-2" style={{ color: COLORS.glass }}>{venue}</span>
       </div>
       <div className="text-center mb-2">
-        <div className="inline-block px-4 py-2 rounded-full font-mono text-sm" style={{ backgroundColor: COLORS.teal, color: COLORS.lime }}>{doneMatches} / {totalMatches} MATCHES PLAYED</div>
+        <div className="inline-block px-4 py-2 rounded-full font-mono text-sm" style={{ backgroundColor: COLORS.card, color: COLORS.green }}>{doneMatches} / {totalMatches} MATCHES PLAYED</div>
       </div>
       <p className="text-xs text-center mb-5" style={{ color: COLORS.glass }}>
         {totalRounds} rounds &middot; tap "Skip for now" if someone's away, then come back to it any time.
@@ -1100,7 +1100,7 @@ function SessionDetail({ session, youName, onBack }) {
 
       <div className="mb-2"><StarRow value={session.rating.stars} /></div>
       <div className="flex flex-wrap gap-2">
-        {session.rating.tags.map((t) => <span key={t} className="px-3 py-1 rounded-full text-xs" style={{ backgroundColor: COLORS.teal, color: COLORS.cream }}>{t}</span>)}
+        {session.rating.tags.map((t) => <span key={t} className="px-3 py-1 rounded-full text-xs" style={{ backgroundColor: COLORS.cardLight, color: COLORS.text }}>{t}</span>)}
       </div>
     </div>
   );
@@ -1544,9 +1544,9 @@ function LobbyWaiting({ lobby, onStartMatch, onBack }) {
       <h2 className="font-display text-2xl tracking-wide mb-1" style={{ color: COLORS.teal }}>LOBBY</h2>
       <p className="text-sm mb-4" style={{ color: COLORS.glass }}>{lobby.venue} &middot; {lobby.format} &middot; {lobby.total_rounds} rounds</p>
 
-      <div className="rounded-2xl p-4 mb-5" style={{ backgroundColor: COLORS.teal }}>
+      <div className="rounded-2xl p-4 mb-5" style={{ backgroundColor: COLORS.card }}>
         <p className="font-mono text-xs mb-2" style={{ color: COLORS.lime }}>SHARE THIS LINK</p>
-        <p className="text-sm mb-3 break-all" style={{ color: COLORS.cream }}>{shareUrl}</p>
+        <p className="text-sm mb-3 break-all" style={{ color: COLORS.text }}>{shareUrl}</p>
         <button onClick={copyLink} className="w-full py-2.5 rounded-lg font-display tracking-wide flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
           <Link size={16} /> {copying ? 'COPIED!' : 'COPY LINK'}
         </button>
@@ -1646,7 +1646,7 @@ function LobbyJoin({ code, youName, onJoined, onBack }) {
       <p className="font-mono text-xs mb-5" style={{ color: COLORS.glass }}>{lobby.format} &middot; {lobby.total_rounds} rounds &middot; hosted by {lobby.host?.name}</p>
 
       {lobby.venue_address && (
-        <a href={`https://maps.google.com/?q=${encodeURIComponent(lobby.venue_address)}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-3 rounded-xl mb-5 text-sm font-medium" style={{ backgroundColor: COLORS.teal, color: COLORS.lime }}>
+        <a href={`https://maps.google.com/?q=${encodeURIComponent(lobby.venue_address)}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-3 rounded-xl mb-5 text-sm font-medium" style={{ backgroundColor: COLORS.card, color: COLORS.green }}>
           <MapPin size={16} /> Get directions
         </a>
       )}
@@ -1706,12 +1706,12 @@ function NewMenu({ onQuickMatch, onCreateLobby, onCancel }) {
       <h2 className="font-display text-2xl tracking-wide mb-2" style={{ color: COLORS.teal }}>START PLAYING</h2>
       <p className="text-sm mb-6" style={{ color: COLORS.glass }}>Jump straight into scoring, or create a lobby and invite your group first.</p>
 
-      <button onClick={onCreateLobby} className="w-full p-5 rounded-2xl text-left mb-3" style={{ backgroundColor: COLORS.teal }}>
+      <button onClick={onCreateLobby} className="w-full p-5 rounded-2xl text-left mb-3" style={{ backgroundColor: COLORS.green }}>
         <div className="flex items-center gap-3 mb-2">
-          <Users size={22} color={COLORS.lime} />
-          <span className="font-display text-xl tracking-wide" style={{ color: COLORS.lime }}>CREATE LOBBY</span>
+          <Users size={22} color={COLORS.bg} />
+          <span className="font-display text-xl tracking-wide" style={{ color: COLORS.bg }}>CREATE LOBBY</span>
         </div>
-        <p className="text-sm" style={{ color: COLORS.cream }}>Share a link in your WhatsApp group. Friends join the waiting room. You pick who plays and start the match.</p>
+        <p className="text-sm" style={{ color: COLORS.bg, opacity: 0.7 }}>Share a link in your WhatsApp group. Friends join the waiting room. You pick who plays and start the match.</p>
       </button>
 
       <button onClick={onQuickMatch} className="w-full p-5 rounded-2xl text-left" style={{ backgroundColor: COLORS.card }}>
@@ -1760,10 +1760,10 @@ function AuthScreen() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col justify-center px-8 py-10" style={{ backgroundColor: COLORS.teal }}>
+    <div className="min-h-screen flex flex-col justify-center px-8 py-10" style={{ backgroundColor: COLORS.bg }}>
       <div className="max-w-md w-full mx-auto">
         <h1 className="font-display text-5xl tracking-wide mb-1 text-center" style={{ color: COLORS.lime }}>PADELYUK</h1>
-        <p className="text-sm mb-8 text-center" style={{ color: COLORS.cream }}>Every match, every rivalry, every court.</p>
+        <p className="text-sm mb-8 text-center" style={{ color: COLORS.text }}>Every match, every rivalry, every court.</p>
 
         {sent ? (
           <div className="rounded-2xl p-5 text-center" style={{ backgroundColor: COLORS.cream }}>
@@ -1834,10 +1834,10 @@ function ProfileSetup({ defaultName, onSubmit }) {
   const fieldStyle = { backgroundColor: COLORS.cream, color: COLORS.ink };
 
   return (
-    <div className="min-h-screen flex flex-col justify-center px-8 py-10" style={{ backgroundColor: COLORS.teal }}>
+    <div className="min-h-screen flex flex-col justify-center px-8 py-10" style={{ backgroundColor: COLORS.bg }}>
       <div className="max-w-md w-full mx-auto">
         <h1 className="font-display text-4xl tracking-wide mb-2 text-center" style={{ color: COLORS.lime }}>PADELYUK</h1>
-        <p className="text-sm mb-7 text-center" style={{ color: COLORS.cream }}>A bit about you, so the diary knows who's playing.</p>
+        <p className="text-sm mb-7 text-center" style={{ color: COLORS.text }}>A bit about you, so the diary knows who's playing.</p>
 
         <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.lime }}>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" className="w-full px-4 py-3 rounded-lg mb-4 text-sm" style={fieldStyle} />
