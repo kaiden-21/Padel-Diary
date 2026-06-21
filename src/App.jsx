@@ -707,7 +707,7 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
         <>
           <div className="flex gap-2 mb-1">
             {[4, 6, 9].map((p) => (
-              <button key={p} onClick={() => setTennisTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: tennisTarget === p ? COLORS.lime : 'transparent', color: COLORS.teal, borderColor: tennisTarget === p ? COLORS.lime : COLORS.glass }}>First to {p}</button>
+              <button key={p} onClick={() => setTennisTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: tennisTarget === p ? COLORS.green : 'transparent', color: tennisTarget === p ? COLORS.bg : COLORS.text, borderColor: tennisTarget === p ? COLORS.green : COLORS.border }}>First to {p}</button>
             ))}
           </div>
           <p className="text-xs mb-4" style={{ color: COLORS.glass }}>First team to win {tennisTarget} games takes the match.</p>
@@ -1571,9 +1571,9 @@ function LobbySetup({ profile, onCreated, onCancel }) {
         ))}
       </div>
       {scoreMode === 'points' ? (
-        <div className="flex gap-2 mb-4">{[16, 21, 32].map((p) => (<button key={p} onClick={() => setPointsTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: pointsTarget === p ? COLORS.lime : 'transparent', color: COLORS.teal, borderColor: pointsTarget === p ? COLORS.lime : COLORS.glass }}>{p} pts</button>))}</div>
+        <div className="flex gap-2 mb-4">{[16, 21, 32].map((p) => (<button key={p} onClick={() => setPointsTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: pointsTarget === p ? COLORS.green : 'transparent', color: pointsTarget === p ? COLORS.bg : COLORS.text, borderColor: pointsTarget === p ? COLORS.green : COLORS.border }}>{p} pts</button>))}</div>
       ) : (
-        <div className="flex gap-2 mb-4">{[4, 6, 9].map((p) => (<button key={p} onClick={() => setTennisTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: tennisTarget === p ? COLORS.lime : 'transparent', color: COLORS.teal, borderColor: tennisTarget === p ? COLORS.lime : COLORS.glass }}>First to {p}</button>))}</div>
+        <div className="flex gap-2 mb-4">{[4, 6, 9].map((p) => (<button key={p} onClick={() => setTennisTarget(p)} className="flex-1 py-2 rounded-lg text-sm font-medium border" style={{ backgroundColor: tennisTarget === p ? COLORS.green : 'transparent', color: tennisTarget === p ? COLORS.bg : COLORS.text, borderColor: tennisTarget === p ? COLORS.green : COLORS.border }}>First to {p}</button>))}</div>
       )}
 
       {error && <p className="text-sm mb-3" style={{ color: COLORS.clay }}>{error}</p>}
