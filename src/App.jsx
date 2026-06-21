@@ -12,6 +12,9 @@ import {
   searchProfiles,
   saveSession as saveSessionRemote,
   listMySessions,
+  follow as followUser,
+  unfollow as unfollowUser,
+  listFollowing,
   createLobby,
   getLobbyByCode,
   getLobbyWithMembers,
@@ -22,12 +25,23 @@ import {
 } from './lib/supabase.js';
 
 const COLORS = {
-  ink: '#14201D',
-  cream: '#F3F1E6',
-  teal: '#163832',
-  lime: '#D7E94E',
-  glass: '#4D7C82',
-  clay: '#B4432F',
+  // Core palette
+  bg:        '#0A1628',   // deep navy — main background
+  card:      '#112240',   // card surface
+  cardLight: '#1A3050',   // slightly lighter card / hover
+  border:    '#1E3A5F',   // subtle borders
+  text:      '#FFFFFF',   // primary text
+  muted:     '#5B7FA6',   // secondary / muted text
+  green:     '#39FF14',   // electric green accent
+  red:       '#FF4444',   // loss / error
+  // Legacy aliases — all existing component code uses these names
+  // Remapping them here means the whole app goes dark automatically.
+  ink:   '#FFFFFF',       // was dark text → now white text
+  cream: '#0A1628',       // was light bg  → now dark bg
+  teal:  '#39FF14',       // was dark green → now electric green (buttons / active)
+  lime:  '#39FF14',       // was yellow-green → now electric green
+  glass: '#5B7FA6',       // was muted teal  → now muted blue
+  clay:  '#FF4444',       // was orange-red   → now bright red
 };
 
 const TAGS = ['Good lighting', 'Bouncy court', 'Slippery surface', 'Great vibe', 'Crowded', 'Windy'];
@@ -321,36 +335,88 @@ function TagChips({ selected, onToggle }) {
 }
 
 function SessionTicket({ session, youName, onClick }) {
-  const yourCourt = session.courts.find((c) => c.players.includes(youName));
-  const yourEntry = session.standings.find((s) => s.name === youName);
-  const others = yourCourt ? yourCourt.players.filter((p) => p !== youName) : [];
-  const pips = yourCourt
-    ? yourCourt.rounds.filter((r) => playedIn(r, youName)).map((r) => {
-        const a = r.teamA.includes(youName);
-        return (a ? r.scoreA : r.scoreB) > (a ? r.scoreB : r.scoreA);
-      })
-    : [];
+  const yourCourt = session.courts?.find((c) => c.players.includes(youName));
+  const yourRounds = yourCourt ? yourCourt.rounds.filter((r) => playedIn(r, youName)) : [];
+
+  // Figure out your team from the first round
+  const firstRound = yourRounds[0];
+  const yourTeam = firstRound ? (firstRound.teamA.includes(youName) ? firstRound.teamA : firstRound.teamB) : [youName];
+  const oppTeam = firstRound ? (firstRound.teamA.includes(youName) ? firstRound.teamB : firstRound.teamA) : [];
+
+  // Win/loss per round
+  const roundResults = yourRounds.map((r) => {
+    const isA = r.teamA.includes(youName);
+    return { won: (isA ? r.scoreA : r.scoreB) > (isA ? r.scoreB : r.scoreA), yourScore: isA ? r.scoreA : r.scoreB, oppScore: isA ? r.scoreB : r.scoreA };
+  });
+  const wins = roundResults.filter((r) => r.won).length;
+  const isWin = wins > roundResults.length - wins;
 
   return (
-    <button onClick={onClick} className="w-full flex text-left rounded-2xl overflow-hidden shadow-sm mb-4" style={{ backgroundColor: '#fff' }}>
-      <div className="flex-1 p-4 min-w-0">
-        <div className="flex items-center justify-between mb-1 gap-2">
-          <span className="font-display text-lg tracking-wide truncate" style={{ color: COLORS.teal }}>{session.venue}</span>
-          <span className="font-mono text-xs whitespace-nowrap" style={{ color: COLORS.glass }}>{fmtDate(session.date)}</span>
+    <button onClick={onClick} className="w-full text-left rounded-2xl p-4 mb-3" style={{ backgroundColor: COLORS.card }}>
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-mono text-xs" style={{ color: COLORS.muted }}>{fmtDate(session.date)}</span>
+          {session.venue && <span className="font-mono text-xs flex items-center gap-1 truncate" style={{ color: COLORS.muted }}><MapPin size={10} />{session.venue}</span>}
         </div>
-        <div className="font-mono text-xs uppercase mb-2" style={{ color: COLORS.glass }}>
-          {session.format} &middot; {yourCourt ? yourCourt.rounds.length : 0} rounds
+        {roundResults.length > 0 && (
+          <span className="px-2 py-0.5 rounded-full text-xs font-bold font-mono flex-shrink-0" style={{ backgroundColor: isWin ? COLORS.green : COLORS.red, color: isWin ? COLORS.bg : '#fff' }}>
+            {isWin ? 'WIN' : 'LOSS'}
+          </span>
+        )}
+      </div>
+
+      {/* Teams + scores */}
+      {firstRound && (
+        <div className="space-y-2 mb-3">
+          {/* Your team */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex -space-x-1">
+                {yourTeam.map((p, i) => (
+                  <div key={i} className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2" style={{ backgroundColor: COLORS.green, color: COLORS.bg, borderColor: COLORS.card }}>
+                    {p.charAt(0).toUpperCase()}
+                  </div>
+                ))}
+              </div>
+              <span className="text-sm font-semibold truncate" style={{ color: COLORS.text }}>{yourTeam.join(' & ')}</span>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              {roundResults.map((r, i) => (
+                <span key={i} className="font-mono text-sm font-bold" style={{ color: r.won ? COLORS.green : COLORS.text }}>{r.yourScore}</span>
+              ))}
+            </div>
+          </div>
+
+          {/* Opponent team */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex -space-x-1">
+                {oppTeam.map((p, i) => (
+                  <div key={i} className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2" style={{ backgroundColor: COLORS.cardLight, color: COLORS.muted, borderColor: COLORS.card }}>
+                    {p.charAt(0).toUpperCase()}
+                  </div>
+                ))}
+              </div>
+              <span className="text-sm truncate" style={{ color: COLORS.muted }}>{oppTeam.join(' & ')}</span>
+            </div>
+            <div className="flex gap-2 flex-shrink-0">
+              {roundResults.map((r, i) => (
+                <span key={i} className="font-mono text-sm" style={{ color: COLORS.muted }}>{r.oppScore}</span>
+              ))}
+            </div>
+          </div>
         </div>
-        {others.length > 0 && <div className="text-sm mb-2 truncate" style={{ color: COLORS.ink }}>with {others.join(', ')}</div>}
-        <div className="flex gap-1 flex-wrap">
-          {pips.map((win, i) => (
-            <span key={i} className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: win ? COLORS.lime : COLORS.clay }} />
+      )}
+
+      {/* Footer: stars + format */}
+      <div className="flex items-center justify-between">
+        <div className="flex">
+          {session.rating?.stars > 0 && Array.from({ length: 5 }).map((_, i) => (
+            <Star key={i} size={12} fill={i < session.rating.stars ? COLORS.green : 'none'} color={i < session.rating.stars ? COLORS.green : COLORS.muted} strokeWidth={1.5} />
           ))}
         </div>
-      </div>
-      <div className="stub w-20 flex-shrink-0 flex flex-col items-center justify-center" style={{ backgroundColor: COLORS.teal }}>
-        <span className="font-display text-2xl" style={{ color: COLORS.lime }}>#{yourEntry ? yourEntry.rank : '-'}</span>
-        <span className="font-mono text-[10px]" style={{ color: COLORS.cream }}>{yourEntry ? yourEntry.total : 0} PTS</span>
+        <span className="font-mono text-xs capitalize" style={{ color: COLORS.muted }}>{session.format}</span>
       </div>
     </button>
   );
@@ -364,7 +430,7 @@ function loadMapsSDK(apiKey) {
   mapsPromise = new Promise((resolve) => {
     if (window.google?.maps?.places) { resolve(window.google.maps.places); return; }
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&v=weekly`;
     script.async = true;
     script.onload = () => resolve(window.google.maps.places);
     document.head.appendChild(script);
@@ -376,48 +442,59 @@ function VenueSearch({ value, onChange, onSelect }) {
   const [query, setQuery] = useState(value || '');
   const [suggestions, setSuggestions] = useState([]);
   const timerRef = useRef(null);
-  const serviceRef = useRef(null);
+  const sessionTokenRef = useRef(null);
   const MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY;
 
   useEffect(() => {
     if (!MAPS_KEY) return;
     loadMapsSDK(MAPS_KEY).then((places) => {
-      serviceRef.current = new places.AutocompleteService();
+      // Create a session token for billing grouping
+      if (places.AutocompleteSessionToken) {
+        sessionTokenRef.current = new places.AutocompleteSessionToken();
+      }
     });
   }, [MAPS_KEY]);
 
-  function search(q) {
-    if (!q || q.length < 3 || !serviceRef.current) { setSuggestions([]); return; }
-    serviceRef.current.getPlacePredictions(
-      { input: q, types: ['establishment'] },
-      (predictions, status) => {
-        if (status === 'OK' && predictions) setSuggestions(predictions);
-        else setSuggestions([]);
-      }
-    );
+  async function search(q) {
+    if (!q || q.length < 3) { setSuggestions([]); return; }
+    if (!window.google?.maps?.places) return;
+    try {
+      const { suggestions } = await window.google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input: q,
+        sessionToken: sessionTokenRef.current,
+        includedPrimaryTypes: ['establishment'],
+      });
+      setSuggestions(suggestions || []);
+    } catch (e) {
+      setSuggestions([]);
+    }
   }
 
-  function selectPlace(prediction) {
-    setQuery(prediction.structured_formatting?.main_text || prediction.description);
+  async function selectPlace(suggestion) {
+    const place = suggestion.placePrediction;
+    setQuery(place.mainText?.toString() || place.text?.toString() || '');
     setSuggestions([]);
-    if (!window.google?.maps) {
-      onSelect({ name: prediction.structured_formatting?.main_text || prediction.description, address: prediction.description, lat: null, lng: null });
-      return;
-    }
-    const geocoder = new window.google.maps.Geocoder();
-    geocoder.geocode({ placeId: prediction.place_id }, (results, status) => {
-      if (status === 'OK' && results[0]) {
-        const loc = results[0].geometry.location;
-        onSelect({
-          name: prediction.structured_formatting?.main_text || prediction.description,
-          address: results[0].formatted_address,
-          lat: loc.lat(),
-          lng: loc.lng(),
-        });
-      } else {
-        onSelect({ name: prediction.structured_formatting?.main_text || prediction.description, address: prediction.description, lat: null, lng: null });
+    try {
+      const placeResult = place.toPlace();
+      await placeResult.fetchFields({ fields: ['displayName', 'formattedAddress', 'location'] });
+      // Refresh session token after selection
+      if (window.google.maps.places.AutocompleteSessionToken) {
+        sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken();
       }
-    });
+      onSelect({
+        name: placeResult.displayName || place.mainText?.toString() || '',
+        address: placeResult.formattedAddress || '',
+        lat: placeResult.location?.lat() || null,
+        lng: placeResult.location?.lng() || null,
+      });
+    } catch (e) {
+      onSelect({
+        name: place.mainText?.toString() || '',
+        address: place.text?.toString() || '',
+        lat: null,
+        lng: null,
+      });
+    }
   }
 
   function handleChange(val) {
@@ -440,16 +517,19 @@ function VenueSearch({ value, onChange, onSelect }) {
         />
       </div>
       {suggestions.length > 0 && (
-        <div className="absolute z-10 w-full mt-1 rounded-xl overflow-hidden shadow-lg" style={{ backgroundColor: '#fff' }}>
-          {suggestions.map((s) => (
-            <button key={s.place_id} onClick={() => selectPlace(s)} className="w-full text-left px-4 py-3 text-sm flex items-start gap-2" style={{ borderBottom: '1px solid #eee', color: COLORS.ink }}>
-              <MapPin size={14} color={COLORS.glass} className="mt-0.5 flex-shrink-0" />
-              <div className="min-w-0">
-                <div className="font-medium truncate">{s.structured_formatting?.main_text}</div>
-                <div className="text-xs truncate" style={{ color: COLORS.glass }}>{s.structured_formatting?.secondary_text}</div>
-              </div>
-            </button>
-          ))}
+        <div className="absolute z-10 w-full mt-1 rounded-xl overflow-hidden shadow-lg" style={{ backgroundColor: COLORS.card }}>
+          {suggestions.map((s, i) => {
+            const place = s.placePrediction;
+            return (
+              <button key={i} onClick={() => selectPlace(s)} className="w-full text-left px-4 py-3 text-sm flex items-start gap-2" style={{ borderBottom: `1px solid ${COLORS.border}`, color: COLORS.ink }}>
+                <MapPin size={14} color={COLORS.glass} className="mt-0.5 flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{place.mainText?.toString()}</div>
+                  <div className="text-xs truncate" style={{ color: COLORS.glass }}>{place.secondaryText?.toString()}</div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -569,7 +649,7 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
       </p>
 
       <label className="block text-xs font-mono uppercase mb-1" style={{ color: COLORS.glass }}>Player names</label>
-      <div className="mb-2 px-3 py-2 rounded-lg text-sm flex items-center gap-2" style={{ backgroundColor: '#fff', color: COLORS.ink }}>
+      <div className="mb-2 px-3 py-2 rounded-lg text-sm flex items-center gap-2" style={{ backgroundColor: COLORS.card, color: COLORS.ink }}>
         <Avatar photo={profile.photo} name={youName} size={24} /> {youName} (you)
       </div>
       {names.map((n, i) => (
@@ -578,7 +658,7 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
       <datalist id="players">{knownPlayers.map((p) => <option key={p} value={p} />)}</datalist>
 
       {format === 'fixed' && (
-        <div className="rounded-2xl p-3 mb-2" style={{ backgroundColor: '#EDF0DD' }}>
+        <div className="rounded-2xl p-3 mb-2" style={{ backgroundColor: COLORS.cardLight }}>
           <div className="font-mono text-xs uppercase mb-2" style={{ color: COLORS.glass }}>Teams (paired in order)</div>
           {(() => {
             const all = [youName, ...names.map((n) => n.trim() || '…')];
@@ -632,7 +712,7 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
         </>
       )}
 
-      <div className="rounded-2xl p-4 mb-4" style={{ backgroundColor: '#fff' }}>
+      <div className="rounded-2xl p-4 mb-4" style={{ backgroundColor: COLORS.card }}>
         <label className="block text-xs font-mono uppercase mb-2" style={{ color: COLORS.glass }}>Your gear today</label>
         <input value={racket} onChange={(e) => setRacket(e.target.value)} placeholder="Racket (e.g. Bullpadel Vertex)" className="w-full px-3 py-2.5 rounded-lg border mb-3 text-sm" style={{ borderColor: COLORS.glass }} />
         <div className="flex gap-2">
@@ -655,7 +735,7 @@ function LiveTab({ active, onCommitRound, onScoreMatch, onSkipMatch, onFinish, o
       <div className="px-5 pt-6 pb-28">
         <h1 className="font-display text-3xl tracking-wide mb-1" style={{ color: COLORS.teal }}>LIVE</h1>
         <p className="text-sm mb-6" style={{ color: COLORS.glass }}>No match in progress.</p>
-        <div className="text-center py-16 px-6 rounded-2xl" style={{ backgroundColor: '#fff' }}>
+        <div className="text-center py-16 px-6 rounded-2xl" style={{ backgroundColor: COLORS.card }}>
           <Play size={32} color={COLORS.glass} className="mx-auto mb-3" />
           <p className="text-sm mb-5" style={{ color: COLORS.glass }}>Start a match and the live scoreboard shows up here.</p>
           <button onClick={onGoNew} className="px-5 py-2.5 rounded-xl font-display tracking-wide" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>NEW MATCH</button>
@@ -752,9 +832,9 @@ function ScoringView({ active, onCommitRound, onDiscard }) {
       </button>
 
       <div className="font-mono text-xs uppercase mb-2" style={{ color: COLORS.glass }}>Standings</div>
-      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: '#fff' }}>
+      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: COLORS.card }}>
         {standings.map((r) => (
-          <div key={r.name} className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid #eee' }}>
+          <div key={r.name} className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
             <span className="text-sm" style={{ color: COLORS.ink }}><span className="font-mono mr-2" style={{ color: COLORS.glass }}>{r.rank}</span>{r.name}</span>
             <span className="font-mono text-sm" style={{ color: COLORS.glass }}>{r.total} pts</span>
           </div>
@@ -793,7 +873,7 @@ function MatchRow({ match, scoring, courtLabel, onScore, onSkip }) {
 
   if (!editing) {
     return (
-      <div className="rounded-2xl p-4 mb-3" style={{ backgroundColor: '#fff' }}>
+      <div className="rounded-2xl p-4 mb-3" style={{ backgroundColor: COLORS.card }}>
         <div className="flex items-center justify-between mb-2">
           <span className="font-mono text-xs" style={{ color: COLORS.glass }}>ROUND {match.round} &middot; {courtLabel}</span>
           <button onClick={() => setEditing(true)} className="font-mono text-[10px] px-2 py-0.5 rounded-full" style={{ backgroundColor: COLORS.cream, color: COLORS.teal }}>EDIT</button>
@@ -905,9 +985,9 @@ function ScheduleView({ active, onScoreMatch, onSkipMatch, onFinish, onDiscard }
       </button>
 
       <div className="font-mono text-xs uppercase mb-2" style={{ color: COLORS.glass }}>Standings so far</div>
-      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: '#fff' }}>
+      <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: COLORS.card }}>
         {flatStandings.map((r) => (
-          <div key={r.name} className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid #eee' }}>
+          <div key={r.name} className="flex items-center justify-between px-4 py-2.5" style={{ borderBottom: `1px solid ${COLORS.border}` }}>
             <span className="text-sm" style={{ color: COLORS.ink }}><span className="font-mono mr-2" style={{ color: COLORS.glass }}>{r.rank}</span>{r.name}</span>
             <span className="font-mono text-sm" style={{ color: COLORS.glass }}>{r.total} pts</span>
           </div>
@@ -928,9 +1008,9 @@ function SummaryView({ active, onSave, onDiscard }) {
       <h2 className="font-display text-2xl tracking-wide mb-1" style={{ color: COLORS.teal }}>MATCH COMPLETE</h2>
       <p className="text-sm mb-5" style={{ color: COLORS.glass }}>{active.venue}</p>
 
-      <div className="rounded-2xl mb-6 overflow-hidden" style={{ backgroundColor: '#fff' }}>
+      <div className="rounded-2xl mb-6 overflow-hidden" style={{ backgroundColor: COLORS.card }}>
         {standings.map((r) => (
-          <div key={r.name} className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: r.name === active.youName ? '#EDF0DD' : 'transparent', borderBottom: '1px solid #eee' }}>
+          <div key={r.name} className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: r.name === active.youName ? '#EDF0DD' : 'transparent', borderBottom: `1px solid ${COLORS.border}` }}>
             <div className="flex items-center gap-3"><span className="font-display text-lg w-6" style={{ color: COLORS.teal }}>{r.rank === 1 ? '🏆' : `#${r.rank}`}</span><span className="text-sm font-medium" style={{ color: COLORS.ink }}>{r.name}{r.name === active.youName ? ' (you)' : ''}</span></div>
             <span className="font-mono text-sm" style={{ color: COLORS.glass }}>{r.total} pts</span>
           </div>
@@ -1000,7 +1080,7 @@ function SessionDetail({ session, youName, onBack }) {
         <div key={idx} className="mb-5">
           {session.courts.length > 1 && <div className="font-mono text-xs mb-2" style={{ color: COLORS.glass }}>COURT {idx + 1}</div>}
           {c.rounds.map((r, ri) => (
-            <div key={ri} className="flex items-center justify-between px-3 py-2 rounded-lg mb-1.5 gap-2" style={{ backgroundColor: '#fff' }}>
+            <div key={ri} className="flex items-center justify-between px-3 py-2 rounded-lg mb-1.5 gap-2" style={{ backgroundColor: COLORS.card }}>
               <span className="text-sm truncate" style={{ color: r.scoreA > r.scoreB ? COLORS.teal : COLORS.ink }}>{r.teamA.join(' & ')}</span>
               <span className="font-mono text-sm whitespace-nowrap" style={{ color: COLORS.glass }}>{r.scoreA} &ndash; {r.scoreB}</span>
               <span className="text-sm text-right truncate" style={{ color: r.scoreB > r.scoreA ? COLORS.teal : COLORS.ink }}>{r.teamB.join(' & ')}</span>
@@ -1009,9 +1089,9 @@ function SessionDetail({ session, youName, onBack }) {
         </div>
       ))}
 
-      <div className="rounded-2xl mb-5 overflow-hidden" style={{ backgroundColor: '#fff' }}>
+      <div className="rounded-2xl mb-5 overflow-hidden" style={{ backgroundColor: COLORS.card }}>
         {session.standings.map((r) => (
-          <div key={r.name} className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: r.name === youName ? '#EDF0DD' : 'transparent', borderBottom: '1px solid #eee' }}>
+          <div key={r.name} className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: r.name === youName ? '#EDF0DD' : 'transparent', borderBottom: `1px solid ${COLORS.border}` }}>
             <span className="text-sm font-medium" style={{ color: COLORS.ink }}>#{r.rank} {r.name}</span>
             <span className="font-mono text-sm" style={{ color: COLORS.glass }}>{r.total} pts</span>
           </div>
@@ -1036,12 +1116,12 @@ function RivalDetail({ name, sessions, youName, onBack, onOpenSession }) {
       <button onClick={onBack} className="flex items-center gap-1 text-sm mb-4" style={{ color: COLORS.glass }}><ChevronLeft size={18} /> Back</button>
       <div className="flex items-center gap-3 mb-5"><Avatar name={name} size={56} /><h2 className="font-display text-2xl tracking-wide" style={{ color: COLORS.teal }}>{name}</h2></div>
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <div className="rounded-2xl p-4" style={{ backgroundColor: '#fff' }}>
+        <div className="rounded-2xl p-4" style={{ backgroundColor: COLORS.card }}>
           <div className="font-mono text-xs mb-1" style={{ color: COLORS.glass }}>AS PARTNERS</div>
           <div className="font-display text-2xl" style={{ color: COLORS.teal }}>{stats.partnerRounds} rounds</div>
           <div className="text-xs" style={{ color: COLORS.glass }}>{stats.partnerRounds ? Math.round((stats.partnerWins / stats.partnerRounds) * 100) : 0}% won together</div>
         </div>
-        <div className="rounded-2xl p-4" style={{ backgroundColor: '#fff' }}>
+        <div className="rounded-2xl p-4" style={{ backgroundColor: COLORS.card }}>
           <div className="font-mono text-xs mb-1" style={{ color: COLORS.glass }}>AS OPPONENTS</div>
           <div className="font-display text-2xl" style={{ color: COLORS.teal }}>{stats.oppWins}-{stats.oppRounds - stats.oppWins}</div>
           <div className="text-xs" style={{ color: COLORS.glass }}>your record vs them</div>
@@ -1139,28 +1219,83 @@ function ProfileEditor({ youName, profile, onSave, onBack, onSignOut }) {
 }
 
 // ---------- diary hub ----------
-function DiaryScreen({ sessions, youName, profile, onUpdateProfile, onSignOut }) {
-  const [segment, setSegment] = useState('matches');
+function DiaryScreen({ sessions, youName, profile, onUpdateProfile, onSignOut, following, onFollow, onUnfollow }) {
+  const [filter, setFilter] = useState('all');
   const [view, setView] = useState({ type: 'home' });
 
+  // Stats
   const stats = useMemo(() => {
     let wins = 0, total = 0;
-    const partnerCount = {};
+    const allRounds = [];
     sessions.forEach((s) => {
-      const yc = s.courts.find((c) => c.players.includes(youName));
+      const yc = s.courts?.find((c) => c.players.includes(youName));
       if (!yc) return;
       yc.rounds.forEach((r) => {
         if (!playedIn(r, youName)) return;
         total++;
         const isA = r.teamA.includes(youName);
-        if ((isA ? r.scoreA : r.scoreB) > (isA ? r.scoreB : r.scoreA)) wins++;
-        const partner = (isA ? r.teamA : r.teamB).find((p) => p !== youName);
-        if (partner) partnerCount[partner] = (partnerCount[partner] || 0) + 1;
+        const won = (isA ? r.scoreA : r.scoreB) > (isA ? r.scoreB : r.scoreA);
+        if (won) wins++;
+        allRounds.push(won);
       });
     });
-    const top = Object.entries(partnerCount).sort((a, b) => b[1] - a[1])[0];
-    return { sessions: sessions.length, winRate: total ? Math.round((wins / total) * 100) : 0, topPartner: top ? top[0] : null };
+    // Current streak
+    let streak = 0, streakType = 'W';
+    if (allRounds.length > 0) {
+      streakType = allRounds[0] ? 'W' : 'L';
+      for (const r of allRounds) {
+        if ((r && streakType === 'W') || (!r && streakType === 'L')) streak++;
+        else break;
+      }
+    }
+    return { winRate: total ? Math.round((wins / total) * 100) : 0, streak, streakType };
   }, [sessions, youName]);
+
+  // Past match players for network tab
+  const networkPlayers = useMemo(() => {
+    const map = {};
+    sessions.forEach((s) => {
+      (s.players || []).forEach((name) => { if (name !== youName) map[name] = true; });
+    });
+    return Object.keys(map);
+  }, [sessions, youName]);
+
+  const followingNames = new Set((following || []).map((f) => f.name));
+
+  // Filter sessions
+  const now = new Date();
+  const filteredSessions = useMemo(() => {
+    const sorted = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
+    if (filter === 'all') return sorted;
+    if (filter === 'wins') return sorted.filter((s) => {
+      const yc = s.courts?.find((c) => c.players.includes(youName));
+      if (!yc) return false;
+      const rounds = yc.rounds.filter((r) => playedIn(r, youName));
+      const w = rounds.filter((r) => { const isA = r.teamA.includes(youName); return (isA ? r.scoreA : r.scoreB) > (isA ? r.scoreB : r.scoreA); }).length;
+      return w > rounds.length - w;
+    });
+    if (filter === 'losses') return sorted.filter((s) => {
+      const yc = s.courts?.find((c) => c.players.includes(youName));
+      if (!yc) return false;
+      const rounds = yc.rounds.filter((r) => playedIn(r, youName));
+      const w = rounds.filter((r) => { const isA = r.teamA.includes(youName); return (isA ? r.scoreA : r.scoreB) > (isA ? r.scoreB : r.scoreA); }).length;
+      return w <= rounds.length - w;
+    });
+    if (filter === '5star') return sorted.filter((s) => s.rating?.stars === 5);
+    if (filter === 'month') return sorted.filter((s) => {
+      const d = new Date(s.date);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    });
+    return sorted;
+  }, [sessions, filter, youName]);
+
+  // Rivals and courts for those tabs
+  const rivalMap = buildRivalMap(sessions, youName);
+  const rivals = Object.entries(rivalMap).map(([name, s]) => ({ name, ...s, total: s.partnerRounds + s.oppRounds })).sort((a, b) => b.total - a.total);
+  const courtMap = buildCourtMap(sessions);
+  const courts = Object.entries(courtMap).map(([venue, d]) => ({ venue, ...d, avg: d.starsSum / d.visits })).sort((a, b) => new Date(b.lastDate) - new Date(a.lastDate));
+
+  const monthLabel = now.toLocaleString('en', { month: 'long', year: 'numeric' });
 
   if (view.type === 'session') {
     const s = sessions.find((x) => x.id === view.id);
@@ -1170,64 +1305,127 @@ function DiaryScreen({ sessions, youName, profile, onUpdateProfile, onSignOut })
   if (view.type === 'court') return <CourtDetail venue={view.id} sessions={sessions} youName={youName} onBack={() => setView({ type: 'home' })} onOpenSession={(id) => setView({ type: 'session', id })} />;
   if (view.type === 'profile') return <ProfileEditor youName={youName} profile={profile} onBack={() => setView({ type: 'home' })} onSave={(p) => { onUpdateProfile(p); setView({ type: 'home' }); }} onSignOut={onSignOut} />;
 
-  const rivalMap = buildRivalMap(sessions, youName);
-  const rivals = Object.entries(rivalMap).map(([name, s]) => ({ name, ...s, total: s.partnerRounds + s.oppRounds })).sort((a, b) => b.total - a.total);
-  const courtMap = buildCourtMap(sessions);
-  const courts = Object.entries(courtMap).map(([venue, d]) => ({ venue, ...d, avg: d.starsSum / d.visits })).sort((a, b) => new Date(b.lastDate) - new Date(a.lastDate));
-  const sortedSessions = [...sessions].sort((a, b) => new Date(b.date) - new Date(a.date));
-
   return (
-    <div className="px-5 pt-6 pb-28">
-      <button onClick={() => setView({ type: 'profile' })} className="w-full flex items-center gap-3 p-4 rounded-2xl mb-5 text-left" style={{ backgroundColor: COLORS.teal }}>
-        <Avatar photo={profile.photo} name={youName} size={52} />
-        <div className="flex-1 min-w-0">
-          <div className="font-display text-xl tracking-wide truncate" style={{ color: COLORS.cream }}>{youName}</div>
-          <div className="font-mono text-xs" style={{ color: COLORS.lime }}>{profile.racket || 'No racket'} &middot; {profile.side || 'Right'} side</div>
-        </div>
-        <div className="text-right">
-          <div className="font-display text-2xl" style={{ color: COLORS.lime }}>{stats.winRate}%</div>
-          <div className="font-mono text-[10px]" style={{ color: COLORS.cream }}>WIN RATE</div>
-        </div>
-      </button>
+    <div className="px-5 pt-6 pb-28" style={{ backgroundColor: COLORS.bg }}>
 
-      <div className="flex gap-1 p-1 rounded-xl mb-5" style={{ backgroundColor: '#fff' }}>
-        {[{ k: 'matches', label: 'Matches' }, { k: 'rivals', label: 'Rivals' }, { k: 'courts', label: 'Courts' }].map((s) => (
-          <button key={s.k} onClick={() => setSegment(s.k)} className="flex-1 py-2 rounded-lg text-sm font-medium" style={{ backgroundColor: segment === s.k ? COLORS.teal : 'transparent', color: segment === s.k ? COLORS.cream : COLORS.glass }}>{s.label}</button>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-1">
+        <button onClick={() => setView({ type: 'profile' })} className="flex items-center gap-2">
+          <Avatar photo={profile.photo} name={youName} size={36} />
+          <div className="text-left">
+            <div className="font-display text-sm tracking-wide" style={{ color: COLORS.text }}>PADELYUK</div>
+          </div>
+        </button>
+        <div className="flex gap-3">
+          <Search size={20} color={COLORS.muted} />
+        </div>
+      </div>
+
+      <h1 className="font-display text-4xl tracking-wide mb-0.5 mt-4" style={{ color: COLORS.text }}>Your Diary</h1>
+      <p className="text-sm mb-5" style={{ color: COLORS.muted }}>{monthLabel} &middot; {sessions.length} match{sessions.length !== 1 ? 'es' : ''} logged</p>
+
+      {/* Stats bar */}
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        {[
+          { label: 'WIN RATE', value: `${stats.winRate}%`, icon: '🏆' },
+          { label: 'STREAK', value: `${stats.streak}${stats.streakType}`, icon: '🔥' },
+          { label: 'RATING', value: '—', icon: '📈' },
+        ].map((s) => (
+          <div key={s.label} className="rounded-2xl p-3" style={{ backgroundColor: COLORS.card }}>
+            <div className="font-mono text-[10px] mb-1 flex items-center gap-1" style={{ color: COLORS.muted }}>
+              <span>{s.icon}</span> {s.label}
+            </div>
+            <div className="font-display text-2xl" style={{ color: s.label === 'WIN RATE' ? COLORS.green : COLORS.text }}>{s.value}</div>
+          </div>
         ))}
       </div>
 
-      {segment === 'matches' && (sortedSessions.length === 0 ? (
-        <Empty text="No matches yet. Tap + to play your first one." />
-      ) : sortedSessions.map((s) => <SessionTicket key={s.id} session={s} youName={youName} onClick={() => setView({ type: 'session', id: s.id })} />))}
+      {/* Segment tabs */}
+      <div className="flex gap-1 p-1 rounded-xl mb-4" style={{ backgroundColor: COLORS.card }}>
+        {[{ k: 'matches', label: 'Matches' }, { k: 'rivals', label: 'Rivals' }, { k: 'courts', label: 'Courts' }, { k: 'network', label: 'Network' }].map((s) => (
+          <button key={s.k} onClick={() => setView({ type: 'home', seg: s.k })} className="flex-1 py-2 rounded-lg text-xs font-medium"
+            style={{ backgroundColor: view.seg === s.k || (!view.seg && s.k === 'matches') ? COLORS.green : 'transparent',
+              color: view.seg === s.k || (!view.seg && s.k === 'matches') ? COLORS.bg : COLORS.muted }}
+          >{s.label}</button>
+        ))}
+      </div>
 
-      {segment === 'rivals' && (rivals.length === 0 ? (
+      {/* Matches segment */}
+      {(view.seg === 'matches' || !view.seg) && (
+        <>
+          {/* Filter chips */}
+          <div className="flex gap-2 overflow-x-auto pb-1 mb-4 scrollbar-hide">
+            {[{ k: 'all', label: 'All' }, { k: 'wins', label: 'Wins' }, { k: 'losses', label: 'Losses' }, { k: '5star', label: '5★' }, { k: 'month', label: 'This month' }].map((f) => (
+              <button key={f.k} onClick={() => setFilter(f.k)} className="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 border" style={{ backgroundColor: filter === f.k ? COLORS.green : 'transparent', color: filter === f.k ? COLORS.bg : COLORS.muted, borderColor: filter === f.k ? COLORS.green : COLORS.border }}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {filteredSessions.length === 0
+            ? <Empty text={filter === 'all' ? "No matches yet. Tap + to play your first one." : "No matches for this filter."} />
+            : filteredSessions.map((s) => <SessionTicket key={s.id} session={s} youName={youName} onClick={() => setView({ type: 'session', id: s.id })} />)
+          }
+        </>
+      )}
+
+      {/* Rivals segment */}
+      {view.seg === 'rivals' && (rivals.length === 0 ? (
         <Empty text="Play with friends to start tracking rivalries." />
       ) : rivals.map((r) => (
-        <button key={r.name} onClick={() => setView({ type: 'rival', id: r.name })} className="w-full flex items-center gap-3 p-4 rounded-2xl mb-3" style={{ backgroundColor: '#fff' }}>
+        <button key={r.name} onClick={() => setView({ type: 'rival', id: r.name })} className="w-full flex items-center gap-3 p-4 rounded-2xl mb-3" style={{ backgroundColor: COLORS.card }}>
           <Avatar name={r.name} size={44} />
           <div className="flex-1 text-left min-w-0">
-            <div className="text-sm font-medium" style={{ color: COLORS.ink }}>{r.name}</div>
-            <div className="font-mono text-xs truncate" style={{ color: COLORS.glass }}>
+            <div className="text-sm font-medium" style={{ color: COLORS.text }}>{r.name}</div>
+            <div className="font-mono text-xs truncate" style={{ color: COLORS.muted }}>
               {r.partnerRounds > 0 && `partnered ${r.partnerRounds}x`}{r.partnerRounds > 0 && r.oppRounds > 0 && ' · '}{r.oppRounds > 0 && `faced ${r.oppWins}-${r.oppRounds - r.oppWins}`}
             </div>
           </div>
         </button>
       )))}
 
-      {segment === 'courts' && (courts.length === 0 ? (
+      {/* Courts segment */}
+      {view.seg === 'courts' && (courts.length === 0 ? (
         <Empty text="Rate a court after your next match to see it here." />
       ) : courts.map((c) => (
-        <button key={c.venue} onClick={() => setView({ type: 'court', id: c.venue })} className="w-full flex items-center justify-between p-4 rounded-2xl mb-3" style={{ backgroundColor: '#fff' }}>
-          <div className="flex items-center gap-3 min-w-0"><MapPin size={18} color={COLORS.teal} className="flex-shrink-0" /><div className="text-left min-w-0"><div className="text-sm font-medium truncate" style={{ color: COLORS.ink }}>{c.venue}</div><div className="font-mono text-xs" style={{ color: COLORS.glass }}>{c.visits} visit{c.visits > 1 ? 's' : ''}</div></div></div>
-          <div className="flex items-center gap-1 flex-shrink-0"><Star size={14} fill={COLORS.lime} color={COLORS.teal} /><span className="font-mono text-sm" style={{ color: COLORS.teal }}>{c.avg.toFixed(1)}</span></div>
+        <button key={c.venue} onClick={() => setView({ type: 'court', id: c.venue })} className="w-full flex items-center justify-between p-4 rounded-2xl mb-3" style={{ backgroundColor: COLORS.card }}>
+          <div className="flex items-center gap-3 min-w-0"><MapPin size={18} color={COLORS.green} className="flex-shrink-0" /><div className="text-left min-w-0"><div className="text-sm font-medium truncate" style={{ color: COLORS.text }}>{c.venue}</div><div className="font-mono text-xs" style={{ color: COLORS.muted }}>{c.visits} visit{c.visits > 1 ? 's' : ''}</div></div></div>
+          <div className="flex items-center gap-1 flex-shrink-0"><Star size={14} fill={COLORS.green} color={COLORS.green} /><span className="font-mono text-sm" style={{ color: COLORS.text }}>{c.avg.toFixed(1)}</span></div>
         </button>
       )))}
+
+      {/* Network segment */}
+      {view.seg === 'network' && (
+        <>
+          <p className="text-xs mb-4" style={{ color: COLORS.muted }}>People you've played with — follow them to add quickly when building a lobby.</p>
+          {networkPlayers.length === 0 ? (
+            <Empty text="Play a match first to see people you've played with." />
+          ) : networkPlayers.map((name) => {
+            const isFollowing = followingNames.has(name);
+            return (
+              <div key={name} className="flex items-center gap-3 p-3 rounded-2xl mb-3" style={{ backgroundColor: COLORS.card }}>
+                <Avatar name={name} size={44} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium" style={{ color: COLORS.text }}>{name}</div>
+                  <div className="font-mono text-xs" style={{ color: COLORS.muted }}>Played together</div>
+                </div>
+                <button
+                  onClick={() => isFollowing ? onUnfollow(name) : onFollow(name)}
+                  className="px-3 py-1.5 rounded-full text-xs font-bold border"
+                  style={{ backgroundColor: isFollowing ? 'transparent' : COLORS.green, color: isFollowing ? COLORS.muted : COLORS.bg, borderColor: isFollowing ? COLORS.border : COLORS.green }}
+                >
+                  {isFollowing ? 'Following' : 'Follow'}
+                </button>
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }
 
 function Empty({ text }) {
-  return <div className="text-center py-16 px-4 rounded-2xl" style={{ backgroundColor: '#fff' }}><p className="text-sm" style={{ color: COLORS.glass }}>{text}</p></div>;
+  return <div className="text-center py-16 px-4 rounded-2xl" style={{ backgroundColor: COLORS.card }}><p className="text-sm" style={{ color: COLORS.muted }}>{text}</p></div>;
 }
 
 // ---------- lobby ----------
@@ -1360,7 +1558,7 @@ function LobbyWaiting({ lobby, onStartMatch, onBack }) {
       </div>
 
       {members.length === 0 && (
-        <div className="text-center py-10 rounded-2xl mb-5" style={{ backgroundColor: '#fff' }}>
+        <div className="text-center py-10 rounded-2xl mb-5" style={{ backgroundColor: COLORS.card }}>
           <Users size={28} color={COLORS.glass} className="mx-auto mb-2" />
           <p className="text-sm" style={{ color: COLORS.glass }}>Waiting for friends to join…</p>
         </div>
@@ -1458,7 +1656,7 @@ function LobbyJoin({ code, youName, onJoined, onBack }) {
           {joining ? 'JOINING…' : 'JOIN LOBBY'}
         </button>
       ) : (
-        <div className="rounded-2xl p-4 mb-5 text-center" style={{ backgroundColor: '#EDF0DD' }}>
+        <div className="rounded-2xl p-4 mb-5 text-center" style={{ backgroundColor: COLORS.cardLight }}>
           <Check size={20} color={COLORS.teal} className="mx-auto mb-1" />
           <p className="text-sm font-medium" style={{ color: COLORS.teal }}>You're in the lobby! The host will start the match soon.</p>
         </div>
@@ -1467,7 +1665,7 @@ function LobbyJoin({ code, youName, onJoined, onBack }) {
       <p className="font-mono text-xs uppercase mb-2" style={{ color: COLORS.glass }}>In the lobby ({members.length})</p>
       <div className="space-y-2">
         {members.map((m) => (
-          <div key={m.id} className="flex items-center gap-3 p-3 rounded-2xl" style={{ backgroundColor: '#fff' }}>
+          <div key={m.id} className="flex items-center gap-3 p-3 rounded-2xl" style={{ backgroundColor: COLORS.card }}>
             <Avatar photo={m.profile?.photo_url} name={m.profile?.name} size={40} />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate" style={{ color: COLORS.ink }}>{m.profile?.name}</p>
@@ -1484,16 +1682,16 @@ function LobbyJoin({ code, youName, onJoined, onBack }) {
 function BottomNav({ tab, onChange, hasActive }) {
   return (
     <div className="fixed bottom-0 left-0 right-0">
-      <div className="max-w-md mx-auto flex items-center justify-around px-6 py-3" style={{ backgroundColor: '#fff', borderTop: '1px solid #eee' }}>
+      <div className="max-w-md mx-auto flex items-center justify-around px-6 py-3" style={{ backgroundColor: COLORS.card, borderTop: `1px solid ${COLORS.border}` }}>
         <button onClick={() => onChange('live')} className="flex flex-col items-center gap-0.5 relative">
-          <Play size={20} color={tab === 'live' ? COLORS.teal : COLORS.glass} fill={tab === 'live' ? COLORS.teal : 'none'} />
-          <span className="text-[10px] font-mono" style={{ color: tab === 'live' ? COLORS.teal : COLORS.glass }}>Live</span>
-          {hasActive && <span className="absolute -top-1 right-1 w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.clay }} />}
+          <Play size={20} color={tab === 'live' ? COLORS.green : COLORS.muted} fill={tab === 'live' ? COLORS.green : 'none'} />
+          <span className="text-[10px] font-mono" style={{ color: tab === 'live' ? COLORS.green : COLORS.muted }}>Live</span>
+          {hasActive && <span className="absolute -top-1 right-1 w-2 h-2 rounded-full" style={{ backgroundColor: COLORS.red }} />}
         </button>
-        <button onClick={() => onChange('new')} className="w-14 h-14 rounded-full flex items-center justify-center -mt-6 shadow-lg" style={{ backgroundColor: COLORS.teal }}><Plus size={26} color={COLORS.lime} /></button>
+        <button onClick={() => onChange('new')} className="w-14 h-14 rounded-full flex items-center justify-center -mt-6 shadow-lg" style={{ backgroundColor: COLORS.green }}><Plus size={26} color={COLORS.bg} /></button>
         <button onClick={() => onChange('diary')} className="flex flex-col items-center gap-0.5">
-          <BookOpen size={20} color={tab === 'diary' ? COLORS.teal : COLORS.glass} />
-          <span className="text-[10px] font-mono" style={{ color: tab === 'diary' ? COLORS.teal : COLORS.glass }}>Diary</span>
+          <BookOpen size={20} color={tab === 'diary' ? COLORS.green : COLORS.muted} />
+          <span className="text-[10px] font-mono" style={{ color: tab === 'diary' ? COLORS.green : COLORS.muted }}>Diary</span>
         </button>
       </div>
     </div>
@@ -1516,7 +1714,7 @@ function NewMenu({ onQuickMatch, onCreateLobby, onCancel }) {
         <p className="text-sm" style={{ color: COLORS.cream }}>Share a link in your WhatsApp group. Friends join the waiting room. You pick who plays and start the match.</p>
       </button>
 
-      <button onClick={onQuickMatch} className="w-full p-5 rounded-2xl text-left" style={{ backgroundColor: '#fff' }}>
+      <button onClick={onQuickMatch} className="w-full p-5 rounded-2xl text-left" style={{ backgroundColor: COLORS.card }}>
         <div className="flex items-center gap-3 mb-2">
           <Play size={22} color={COLORS.teal} />
           <span className="font-display text-xl tracking-wide" style={{ color: COLORS.teal }}>QUICK MATCH</span>
@@ -1579,7 +1777,7 @@ function AuthScreen() {
               onClick={submitGoogle}
               disabled={googleBusy}
               className="w-full py-3.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-3 mb-4 disabled:opacity-50"
-              style={{ backgroundColor: '#fff', color: COLORS.ink }}
+              style={{ backgroundColor: COLORS.card, color: COLORS.ink }}
             >
               <svg width="18" height="18" viewBox="0 0 48 48">
                 <path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.7-5.7C34.1 6.5 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 19.7-8 19.7-20 0-1.3-.1-2.7-.1-4z"/>
@@ -1676,7 +1874,8 @@ export default function App() {
   const [sessions, setSessions] = useState([]);
   const [active, setActive] = useState(null);
   const [tab, setTab] = useState('diary');
-  const [activeLobby, setActiveLobby] = useState(null); // lobby the user created / is hosting
+  const [activeLobby, setActiveLobby] = useState(null);
+  const [following, setFollowing] = useState([]);
   const [lobbyJoinCode, setLobbyJoinCode] = useState(null); // code from a join link
 
   const youName = profile ? profile.name : null;
@@ -1736,6 +1935,12 @@ export default function App() {
       } catch (e) {
         console.error('Could not load sessions', e);
       }
+      try {
+        const f = await listFollowing();
+        setFollowing(f || []);
+      } catch (e) {
+        console.error('Could not load following', e);
+      }
     })();
   }, [user]);
 
@@ -1769,6 +1974,34 @@ export default function App() {
       setProfile(mapProfileFromRow(row));
     } catch (e) {
       console.error('Could not save profile', e);
+    }
+  }
+
+  async function handleFollow(name) {
+    try {
+      const matches = await searchProfiles(name);
+      const exact = matches.find((m) => m.name.toLowerCase() === name.toLowerCase());
+      if (exact) {
+        await followUser(exact.id);
+        const f = await listFollowing();
+        setFollowing(f || []);
+      }
+    } catch (e) {
+      console.error('Could not follow', e);
+    }
+  }
+
+  async function handleUnfollow(name) {
+    try {
+      const matches = await searchProfiles(name);
+      const exact = matches.find((m) => m.name.toLowerCase() === name.toLowerCase());
+      if (exact) {
+        await unfollowUser(exact.id);
+        const f = await listFollowing();
+        setFollowing(f || []);
+      }
+    } catch (e) {
+      console.error('Could not unfollow', e);
     }
   }
 
@@ -1883,16 +2116,16 @@ export default function App() {
   }
 
   if (!authChecked) {
-    return <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: COLORS.cream }}><span className="font-mono text-sm" style={{ color: COLORS.glass }}>Loading&hellip;</span></div>;
+    return <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: COLORS.bg }}><span className="font-mono text-sm" style={{ color: COLORS.muted }}>Loading&hellip;</span></div>;
   }
   if (!user) return <AuthScreen />;
   if (!profile) {
-    return <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: COLORS.cream }}><span className="font-mono text-sm" style={{ color: COLORS.glass }}>Loading your profile&hellip;</span></div>;
+    return <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: COLORS.bg }}><span className="font-mono text-sm" style={{ color: COLORS.muted }}>Loading your profile&hellip;</span></div>;
   }
   if (needsProfileSetup) return <ProfileSetup defaultName={profile.name} onSubmit={completeProfileSetup} />;
 
   return (
-    <div className="min-h-screen pb-24" style={{ backgroundColor: COLORS.cream }}>
+    <div className="min-h-screen pb-24" style={{ backgroundColor: COLORS.bg }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700&display=swap');
         .font-display { font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.02em; }
@@ -1911,7 +2144,7 @@ export default function App() {
         {tab === 'lobby-setup' && <LobbySetup profile={profile} onCreated={(lobby) => { setActiveLobby(lobby); setTab('lobby-waiting'); }} onCancel={() => setTab('new')} />}
         {tab === 'lobby-waiting' && activeLobby && <LobbyWaiting lobby={activeLobby} onStartMatch={handleLobbyStart} onBack={() => setTab('new')} />}
         {lobbyJoinCode && user && <LobbyJoin code={lobbyJoinCode} youName={youName} onJoined={() => {}} onBack={() => setLobbyJoinCode(null)} />}
-        {tab === 'diary' && !lobbyJoinCode && <DiaryScreen sessions={sessions} youName={youName} profile={profile} onUpdateProfile={saveProfile} onSignOut={signOut} />}
+        {tab === 'diary' && !lobbyJoinCode && <DiaryScreen sessions={sessions} youName={youName} profile={profile} onUpdateProfile={saveProfile} onSignOut={signOut} following={following} onFollow={handleFollow} onUnfollow={handleUnfollow} />}
       </div>
       <BottomNav tab={tab} onChange={setTab} hasActive={!!active} />
     </div>
