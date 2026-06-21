@@ -723,7 +723,7 @@ function NewSessionSetup({ youName, profile, sessions, hasActive, onStart, onCan
       </div>
 
       {error && <p className="text-sm mb-3" style={{ color: COLORS.clay }}>{error}</p>}
-      <button onClick={handleStart} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>START MATCH</button>
+      <button onClick={handleStart} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>START MATCH</button>
     </div>
   );
 }
@@ -738,7 +738,7 @@ function LiveTab({ active, onCommitRound, onScoreMatch, onSkipMatch, onFinish, o
         <div className="text-center py-16 px-6 rounded-2xl" style={{ backgroundColor: COLORS.card }}>
           <Play size={32} color={COLORS.glass} className="mx-auto mb-3" />
           <p className="text-sm mb-5" style={{ color: COLORS.glass }}>Start a match and the live scoreboard shows up here.</p>
-          <button onClick={onGoNew} className="px-5 py-2.5 rounded-xl font-display tracking-wide" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>NEW MATCH</button>
+          <button onClick={onGoNew} className="px-5 py-2.5 rounded-xl font-display tracking-wide" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>NEW MATCH</button>
         </div>
       </div>
     );
@@ -827,7 +827,7 @@ function ScoringView({ active, onCommitRound, onDiscard }) {
         </div>
       ))}
 
-      <button onClick={() => onCommitRound(inputs.map((i) => ({ a: Number(i.a), b: Number(i.b) })))} disabled={!allFilled} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40 mb-6" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+      <button onClick={() => onCommitRound(inputs.map((i) => ({ a: Number(i.a), b: Number(i.b) })))} disabled={!allFilled} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40 mb-6" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
         {last ? 'FINISH MATCH' : 'NEXT ROUND'}
       </button>
 
@@ -918,7 +918,7 @@ function MatchRow({ match, scoring, courtLabel, onScore, onSkip }) {
           onClick={() => { onScore(Number(a), Number(b)); setEditing(false); }}
           disabled={!filled}
           className="flex-1 py-2 rounded-lg text-sm font-bold disabled:opacity-40"
-          style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}
+          style={{ backgroundColor: COLORS.green, color: COLORS.bg }}
         >
           {match.status === 'skipped' ? 'Play now' : 'Save score'}
         </button>
@@ -980,7 +980,7 @@ function ScheduleView({ active, onScoreMatch, onSkipMatch, onFinish, onDiscard }
         />
       ))}
 
-      <button onClick={onFinish} disabled={doneMatches === 0} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40 mb-6 mt-2" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+      <button onClick={onFinish} disabled={doneMatches === 0} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40 mb-6 mt-2" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
         FINISH SESSION
       </button>
 
@@ -1022,7 +1022,7 @@ function SummaryView({ active, onSave, onDiscard }) {
       <label className="block text-xs font-mono uppercase mb-2" style={{ color: COLORS.glass }}>Quick tags</label>
       <div className="mb-6"><TagChips selected={tags} onToggle={toggleTag} /></div>
 
-      <button onClick={() => onSave({ stars, tags })} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}><Trophy size={18} /> SAVE TO DIARY</button>
+      <button onClick={() => onSave({ stars, tags })} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide mb-3 flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}><Trophy size={18} /> SAVE TO DIARY</button>
       <button onClick={onDiscard} className="w-full py-2 text-sm" style={{ color: COLORS.glass }}>Discard match</button>
     </div>
   );
@@ -1210,7 +1210,7 @@ function ProfileEditor({ youName, profile, onSave, onBack, onSignOut }) {
       <label className="block text-xs font-mono uppercase mb-2" style={{ color: COLORS.glass }}>Rackets owned</label>
       <input value={racketsOwned} onChange={(e) => setRacketsOwned(e.target.value)} placeholder="e.g. Bullpadel Vertex, Adidas Metalbone" className="w-full px-3 py-2.5 rounded-lg border mb-6 text-sm" style={{ borderColor: COLORS.glass }} />
 
-      <button onClick={() => onSave({ racket: racket.trim(), side, photo, dob, gender, racketsOwned: racketsOwned.trim() })} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}><Check size={18} /> SAVE PROFILE</button>
+      <button onClick={() => onSave({ racket: racket.trim(), side, photo, dob, gender, racketsOwned: racketsOwned.trim() })} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}><Check size={18} /> SAVE PROFILE</button>
       {onSignOut && (
         <button onClick={onSignOut} className="w-full py-3 mt-3 text-sm font-medium flex items-center justify-center gap-2" style={{ color: COLORS.clay }}><LogOut size={16} /> Sign out</button>
       )}
@@ -1494,7 +1494,7 @@ function LobbySetup({ profile, onCreated, onCancel }) {
       )}
 
       {error && <p className="text-sm mb-3" style={{ color: COLORS.clay }}>{error}</p>}
-      <button onClick={create} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+      <button onClick={create} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
         {busy ? 'CREATING…' : 'CREATE & GET LINK'}
       </button>
     </div>
@@ -1547,7 +1547,7 @@ function LobbyWaiting({ lobby, onStartMatch, onBack }) {
       <div className="rounded-2xl p-4 mb-5" style={{ backgroundColor: COLORS.card }}>
         <p className="font-mono text-xs mb-2" style={{ color: COLORS.lime }}>SHARE THIS LINK</p>
         <p className="text-sm mb-3 break-all" style={{ color: COLORS.text }}>{shareUrl}</p>
-        <button onClick={copyLink} className="w-full py-2.5 rounded-lg font-display tracking-wide flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+        <button onClick={copyLink} className="w-full py-2.5 rounded-lg font-display tracking-wide flex items-center justify-center gap-2" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
           <Link size={16} /> {copying ? 'COPIED!' : 'COPY LINK'}
         </button>
       </div>
@@ -1581,7 +1581,7 @@ function LobbyWaiting({ lobby, onStartMatch, onBack }) {
         ))}
       </div>
 
-      <button onClick={handleStart} disabled={selected.length < 4} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+      <button onClick={handleStart} disabled={selected.length < 4} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
         START MATCH ({selected.length} players)
       </button>
     </div>
@@ -1652,7 +1652,7 @@ function LobbyJoin({ code, youName, onJoined, onBack }) {
       )}
 
       {!joined ? (
-        <button onClick={join} disabled={joining} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40 mb-5" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+        <button onClick={join} disabled={joining} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-40 mb-5" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
           {joining ? 'JOINING…' : 'JOIN LOBBY'}
         </button>
       ) : (
@@ -1805,7 +1805,7 @@ function AuthScreen() {
               style={{ backgroundColor: COLORS.cream, color: COLORS.ink }}
             />
             {error && <p className="text-sm mb-3" style={{ color: COLORS.lime }}>{error}</p>}
-            <button onClick={submitEmail} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-50" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+            <button onClick={submitEmail} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-50" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
               {busy ? 'SENDING…' : 'SEND SIGN-IN LINK'}
             </button>
           </>
@@ -1857,7 +1857,7 @@ function ProfileSetup({ defaultName, onSubmit }) {
         <p className="text-xs mb-5" style={{ color: COLORS.glass }}>Optional &mdash; you can fill these in later from your profile.</p>
 
         {error && <p className="text-sm mb-3" style={{ color: COLORS.lime }}>{error}</p>}
-        <button onClick={submit} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-50" style={{ backgroundColor: COLORS.lime, color: COLORS.teal }}>
+        <button onClick={submit} disabled={busy} className="w-full py-3.5 rounded-xl font-display text-lg tracking-wide disabled:opacity-50" style={{ backgroundColor: COLORS.green, color: COLORS.bg }}>
           {busy ? 'SAVING…' : 'START LOGGING'}
         </button>
       </div>
